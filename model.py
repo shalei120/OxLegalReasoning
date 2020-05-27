@@ -14,7 +14,6 @@ import datetime
 from Encoder import Encoder
 from Decoder import Decoder
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from Hyperparameters import args
 
@@ -38,15 +37,6 @@ class Model(nn.Module):
         self.word2index = w2i
         self.index2word = i2w
         self.max_length = args['maxLengthDeco']
-
-        self.dtype = 'float32'
-        self.device = device
-
-        # Placeholders
-        # self.encoderInputs  = None
-        # self.decoderInputs  = None  # Same that decoderTarget plus the <go>
-        # self.decoderTargets = None
-
 
         self.NLLloss = torch.nn.NLLLoss(reduction = 'none')
         self.CEloss =  torch.nn.CrossEntropyLoss(reduction = 'none')
