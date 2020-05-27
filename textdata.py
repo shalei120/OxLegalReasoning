@@ -15,8 +15,8 @@ class Batch:
     """Struct containing batches info
     """
     def __init__(self):
-        self.encoderSeqs1 = []
-        self.encoderSeqs2 = []
+        self.encoderSeqs = []
+        self.encoder_lens = []
         self.label = []
         self.decoderSeqs = []
         self.targetSeqs = []
@@ -79,36 +79,20 @@ class TextData:
         # Create the batch tensor
         for i in range(batchSize):
             # Unpack the sample
-            sample, raw_sentence = samples[i]
+            sen_ids, charge_list, raw_sentence = samples[i]
 
-            if len(sample) > args['maxLengthEnco']:
-                sample = sample[:args['maxLengthEnco']]
+            if len(sen_ids) > args['maxLengthEnco']:
+                sen_ids = sen_ids[:args['maxLengthEnco']]
 
-            batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sample)  # Add the <go> and <eos> tokens
-            batch.targetSeqs.append(sample + [self.word2index['END_TOKEN']])  # Same as decoder, but shifted to the left (ignore the <go>)
+            batch.encoderSeqs.append(sen_ids)
+            batch.encoder_lens.append(len(batch.encoderSeqs[i]))
+            batch.label.append(charge_list[0])
 
-            assert len(batch.decoderSeqs[i]) <= args['maxLengthDeco']
-
-            # TODO: Should use tf batch function to automatically add padding and batch samples
-            # Add padding & define weight
-            batch.decoder_lens.append(len(batch.targetSeqs[i]))
-
-        maxlen_dec = max(batch.decoder_lens)
+        maxlen_enc = max(batch.encoder_lens)
 
 
         for i in range(batchSize):
-            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['PAD']] * (maxlen_dec - len(batch.decoderSeqs[i]))
-            batch.targetSeqs[i]  = batch.targetSeqs[i]  + [self.word2index['PAD']] * (maxlen_dec - len(batch.targetSeqs[i]))
-
-        pre_sort_list = [(a, b, c) for a, b, c  in
-                         zip( batch.decoderSeqs, batch.decoder_lens,
-                             batch.targetSeqs)]
-
-        post_sorted_list = sorted(pre_sort_list, key=lambda x: x[1], reverse=True)
-
-        batch.decoderSeqs = [a[0] for a in post_sorted_list]
-        batch.decoder_lens = [a[1] for a in post_sorted_list]
-        batch.targetSeqs = [a[2] for a in post_sorted_list]
+            batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['PAD']] * (maxlen_enc - len(batch.encoderSeqs[i]))
 
         return batch
 
@@ -152,6 +136,13 @@ class TextData:
         """
         return len(self.word2index)
 
+    def getChargeNum(self):
+        """Return the number of words present in the dataset
+        Return:
+            int: Number of word on the loader corpus
+        """
+        return len(self.lawinfo['c2i'])
+
     def loadCorpus_CAIL(self):
         """Load/create the conversations data
         """
@@ -191,52 +182,52 @@ class TextData:
 
             ################################################################
 
-            # with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
-            #     lines = rhandle.readlines()
-            #
-            #     # sentences = []
-            #     for line in tqdm(lines):
-            #         cases = json.loads(line)
-            #         fact_text = cases['fact']       # str
-            #         law_article = cases['meta']['relevant_articles']  # ['23','34']
-            #         accusation = cases['meta']['accusation']   # ['steal']
-            #         criminals =  cases['meta']['criminals']    # ['jack']
-            #         term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-            #         punish_of_money = cases['meta']['punish_of_money'] # int 1000
-            #
-            #         fact_text = self.tokenizer(fact_text)
-            #         # sentences.append(fact_text)
-            #         #
-            #
-            #         total_words.extend(fact_text)
-            #
-            #         dataset['train'].append((fact_text, accusation))
-            #
-            # with open(self.corpus_file_test, 'r') as rhandle:
-            #     lines = rhandle.readlines()
-            #     # sentences = []
-            #     # charges = []
-            #     for line in tqdm(lines):
-            #         cases = json.loads(line)
-            #
-            #         fact_text = cases['fact']       # str
-            #         law_article = cases['meta']['relevant_articles']  # ['23','34']
-            #         accusation = cases['meta']['accusation']   # ['steal']
-            #         criminals =  cases['meta']['criminals']    # ['jack']
-            #         term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-            #         punish_of_money = cases['meta']['punish_of_money'] # int 1000
-            #
-            #         fact_text = self.tokenizer(fact_text)
-            #
-            #         total_words.extend(fact_text)
-            #
-            #         dataset['test'].append((fact_text, accusation))
+            with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
+                lines = rhandle.readlines()
 
-            with open(args['rootDir'] + '/datadump.tmp', 'rb') as handle:
-                dataset = pickle.load(handle)
-                print('tmp loaded')
-                for ft, ac in tqdm(dataset['train']):
-                    total_words.extend(ft)
+                # sentences = []
+                for line in tqdm(lines):
+                    cases = json.loads(line)
+                    fact_text = cases['fact']       # str
+                    law_article = cases['meta']['relevant_articles']  # ['23','34']
+                    accusation = cases['meta']['accusation']   # ['steal']
+                    criminals =  cases['meta']['criminals']    # ['jack']
+                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
+                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
+
+                    fact_text = self.tokenizer(fact_text)
+                    # sentences.append(fact_text)
+                    #
+
+                    total_words.extend(fact_text)
+
+                    dataset['train'].append((fact_text, accusation))
+
+            with open(self.corpus_file_test, 'r') as rhandle:
+                lines = rhandle.readlines()
+                # sentences = []
+                # charges = []
+                for line in tqdm(lines):
+                    cases = json.loads(line)
+
+                    fact_text = cases['fact']       # str
+                    law_article = cases['meta']['relevant_articles']  # ['23','34']
+                    accusation = cases['meta']['accusation']   # ['steal']
+                    criminals =  cases['meta']['criminals']    # ['jack']
+                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
+                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
+
+                    fact_text = self.tokenizer(fact_text)
+
+                    total_words.extend(fact_text)
+
+                    dataset['test'].append((fact_text, accusation))
+
+            # with open(args['rootDir'] + '/datadump.tmp', 'rb') as handle:
+            #     dataset = pickle.load(handle)
+            #     print('tmp loaded')
+            #     for ft, ac in tqdm(dataset['train']):
+            #         total_words.extend(ft)
 
             print(len(dataset['train']), len(dataset['test']))
 
