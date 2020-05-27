@@ -37,15 +37,14 @@ class TextData:
 
         # Path variables
         if corpusname == 'cail':
-            self.tokenizer = jieba.cut
+            self.tokenizer = lambda x: list(jieba.cut(x))
         elif corpusname == 'caselaw':
             self.tokenizer = word_tokenize
 
         self.trainingSamples = []  # 2d array containing each question and his answer [[input,target]]
 
-        self.word2index, self.index2word, self.datasets, self.lawinfo = self.loadCorpus_CAIL()
+        self.datasets, self.lawinfo = self.loadCorpus_CAIL()
 
-        self.index2word_set = set(self.index2word)
         print('set')
         # Plot some stats:
         self._printStats(corpusname)
@@ -161,7 +160,7 @@ class TextData:
         self.corpus_file_train = self.basedir + 'train.json'
         self.corpus_file_test =  self.basedir + 'test.json'
 
-        self.data_dump_path = args['rootDir'] + '/model/CAILdata.pkl'
+        self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
 
         print(self.data_dump_path)
         datasetExist = os.path.isfile(self.data_dump_path)
@@ -192,57 +191,70 @@ class TextData:
 
             ################################################################
 
-            with open(self.corpus_file_train, 'r') as rhandle:
-                lines = rhandle.readlines()
+            # with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
+            #     lines = rhandle.readlines()
+            #
+            #     # sentences = []
+            #     for line in tqdm(lines):
+            #         cases = json.loads(line)
+            #         fact_text = cases['fact']       # str
+            #         law_article = cases['meta']['relevant_articles']  # ['23','34']
+            #         accusation = cases['meta']['accusation']   # ['steal']
+            #         criminals =  cases['meta']['criminals']    # ['jack']
+            #         term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
+            #         punish_of_money = cases['meta']['punish_of_money'] # int 1000
+            #
+            #         fact_text = self.tokenizer(fact_text)
+            #         # sentences.append(fact_text)
+            #         #
+            #
+            #         total_words.extend(fact_text)
+            #
+            #         dataset['train'].append((fact_text, accusation))
+            #
+            # with open(self.corpus_file_test, 'r') as rhandle:
+            #     lines = rhandle.readlines()
+            #     # sentences = []
+            #     # charges = []
+            #     for line in tqdm(lines):
+            #         cases = json.loads(line)
+            #
+            #         fact_text = cases['fact']       # str
+            #         law_article = cases['meta']['relevant_articles']  # ['23','34']
+            #         accusation = cases['meta']['accusation']   # ['steal']
+            #         criminals =  cases['meta']['criminals']    # ['jack']
+            #         term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
+            #         punish_of_money = cases['meta']['punish_of_money'] # int 1000
+            #
+            #         fact_text = self.tokenizer(fact_text)
+            #
+            #         total_words.extend(fact_text)
+            #
+            #         dataset['test'].append((fact_text, accusation))
 
-                # sentences = []
-                for line in tqdm(lines):
-                    cases = json.loads(line)
-
-                    fact_text = cases['fact']       # str
-                    law_article = cases['meta']['relevant_articles']  # ['23','34']
-                    accusation = cases['meta']['accusation']   # ['steal']
-                    criminals =  cases['meta']['criminals']    # ['jack']
-                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
-
-                    fact_text = self.tokenizer(fact_text)
-                    # sentences.append(fact_text)
-                    #
-
-                    total_words.extend(fact_text)
-
-                    dataset['train'].append((fact_text, accusation))
-
-            with open(self.corpus_file_test, 'r') as rhandle:
-                lines = rhandle.readlines()
-                # sentences = []
-                # charges = []
-                for line in tqdm(lines):
-                    cases = json.loads(line)
-
-                    fact_text = cases['fact']       # str
-                    law_article = cases['meta']['relevant_articles']  # ['23','34']
-                    accusation = cases['meta']['accusation']   # ['steal']
-                    criminals =  cases['meta']['criminals']    # ['jack']
-                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
-
-                    fact_text = self.tokenizer(fact_text)
-
-                    total_words.extend(fact_text)
-
-                    dataset['test'].extend((fact_text, accusation))
+            with open(args['rootDir'] + '/datadump.tmp', 'rb') as handle:
+                dataset = pickle.load(handle)
+                print('tmp loaded')
+                for ft, ac in tqdm(dataset['train']):
+                    total_words.extend(ft)
 
             print(len(dataset['train']), len(dataset['test']))
+
+            # with open(args['rootDir'] + '/datadump.tmp', 'wb') as handle:
+            #     pickle.dump(dataset, handle, -1)
+            #     print('tmp stored')
 
             fdist = nltk.FreqDist(total_words)
             sort_count = fdist.most_common(30000)
             print('sort_count: ', len(sort_count))
 
+            # nnn=8
             with open(self.basedir + "/voc.txt", "w") as v:
                 for w, c in tqdm(sort_count):
-                    if w not in [' ', '', '\n']:
+                    # if nnn > 0:
+                    #     print([(ord(w1),w1) for w1 in w])
+                    #     nnn-= 1
+                    if w not in [' ', '', '\n', '\r', '\r\n']:
                         v.write(w)
                         v.write(' ')
                         v.write(str(c))
@@ -250,33 +262,34 @@ class TextData:
 
                 v.close()
 
-            word2index = self.read_word2vec(self.basedir + '/voc.txt')
-            sorted_word_index = sorted(word2index.items(), key=lambda item: item[1])
+            self.word2index = self.read_word2vec(self.basedir + '/voc.txt')
+            sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
             print('sorted')
-            index2word = [w for w, n in sorted_word_index]
+            self.index2word = [w for w, n in sorted_word_index]
             print('index2word')
+            self.index2word_set = set(self.index2word)
 
             # self.raw_sentences = copy.deepcopy(dataset)
             for setname in ['train', 'test']:
                 dataset[setname] = [(self.TurnWordID(sen), [charge2index[c] for c in charge], sen) for sen, charge in tqdm(dataset[setname])]
             # Saving
             print('Saving dataset...')
-            self.saveDataset(self.data_dump_path, word2index, index2word, dataset, law_related_info)  # Saving tf samples
+            self.saveDataset(self.data_dump_path, dataset, law_related_info)  # Saving tf samples
         else:
-            word2index, index2word, dataset, law_related_info = self.loadDataset(self.data_dump_path)
+            dataset, law_related_info = self.loadDataset(self.data_dump_path)
             print('loaded')
 
-        return word2index, index2word, dataset, law_related_info
+        return  dataset, law_related_info
 
-    def saveDataset(self, filename, word2index, index2word, datasets, law_related_info):
+    def saveDataset(self, filename, datasets, law_related_info):
         """Save samples to file
         Args:
             filename (str): pickle filename
         """
         with open(os.path.join(filename), 'wb') as handle:
             data = {  # Warning: If adding something here, also modifying loadDataset
-                'word2index': word2index,
-                'index2word': index2word,
+                'word2index': self.word2index,
+                'index2word': self.index2word,
                 'datasets': datasets,
                 'lawinfo' : law_related_info
             }
@@ -291,12 +304,13 @@ class TextData:
         print('Loading dataset from {}'.format(dataset_path))
         with open(dataset_path, 'rb') as handle:
             data = pickle.load(handle)  # Warning: If adding something here, also modifying saveDataset
-            word2index = data['word2index']
-            index2word = data['index2word']
+            self.word2index = data['word2index']
+            self.index2word = data['index2word']
             datasets = data['datasets']
             law_related_info = data['lawinfo']
 
-        return word2index, index2word, datasets, law_related_info
+        self.index2word_set = set(self.index2word)
+        return  datasets, law_related_info
 
 
     def read_word2vec(self, vocfile ):
