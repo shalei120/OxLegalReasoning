@@ -23,7 +23,7 @@ class Model(nn.Module):
         2 LTSM layers
     """
 
-    def __init__(self, args,w2i, i2w):
+    def __init__(self, w2i, i2w):
         """
         Args:
             args: parameters of the model
@@ -47,15 +47,15 @@ class Model(nn.Module):
         self.softmax = nn.Softmax(dim = -1)
 
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']),
-            nn.Softmax(dim=-1)
-          )
+            nn.Linear(args['hiddenSize'] * args['numLayers'], args['chargenum']),
+            nn.LogSoftmax(dim=-1)
+          ).to(args['device'])
         
     def sample_z(self, mu, log_var,batch_size):
         eps = Variable(torch.randn(batch_size, args['style_len']*2* args['numLayers'])).to(args['device'])
         return mu + torch.einsum('ba,ba->ba', torch.exp(log_var/2),eps)
 
-    def forward(self, x, factor):
+    def forward(self, x):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
@@ -71,17 +71,17 @@ class Model(nn.Module):
 
         en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
 
-        en_hidden, en_cell = en_state   # batch hid
+        en_hidden, en_cell = en_state   #2 batch hid
 
-        output = self.ChargeClassifier(en_hidden)   # batch chargenum
+        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(self.batch_size,-1)).to(args['device'])  # batch chargenum
 
-        recon_loss = self.NLLloss(output, self.classifyLabels)
+        recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
 
-        recon_loss_mean = torch.mean(recon_loss)
+        recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
         return recon_loss_mean
 
-    def predict(self, x, transfer = False):
+    def predict(self, x):
         encoderInputs = x['enc_input']
         encoder_lengths = x['enc_len']
 
@@ -92,7 +92,7 @@ class Model(nn.Module):
 
         en_hidden, en_cell = en_state  # batch hid
 
-        output = self.ChargeClassifier(en_hidden)  # batch chargenum
+        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(batch_size,-1)).to(args['device']) # batch chargenum
 
 
         return output, torch.argmax(output, dim = -1)

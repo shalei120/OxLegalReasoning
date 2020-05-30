@@ -21,7 +21,7 @@ from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 import numpy as np
 import copy
 from Hyperparameters import args
-# from model import model
+from model import Model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
@@ -61,7 +61,9 @@ class Runner:
         args['chargenum'] = self.textData.getChargeNum()
         print(self.textData.getVocabularySize())
 
-        self.model = Model()
+        self.model = Model(self.textData.word2index, self.textData.index2word)
+
+        self.train()
 
     def train(self, print_every=1000, plot_every=10, learning_rate=0.001):
         start = time.time()
@@ -88,9 +90,9 @@ class Runner:
             for batch in batches:
                 optimizer.zero_grad()
                 x = {}
-                x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
+                x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
                 x['enc_len'] = batch.encoder_lens
-                x['labels'] = autograd.Variable(torch.LongTensor(batch.label))
+                x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
                 loss = self.model(x)  # batch seq_len outsize
 
@@ -145,7 +147,7 @@ class Runner:
 
                 output_probs, output_labels = self.model.predict(x)
 
-                right += sum(output_labels.cpu().numpy() == torch.LongTensor(batch.labels).cpu().numpy())
+                right += sum(output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy())
                 total += x['enc_input'].size()[0]
 
         accuracy = right / total
