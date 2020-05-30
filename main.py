@@ -21,10 +21,12 @@ from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 import numpy as np
 import copy
 from Hyperparameters import args
-from model import Model
+from LSTM import LSTM_Model
+from Transformer import TransformerModel
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
+parser.add_argument('--modelarch', '-m')
 cmdargs = parser.parse_args()
 
 usegpu = True
@@ -34,6 +36,12 @@ if cmdargs.gpu is None:
 else:
     usegpu = True
     args['device'] = 'cuda:' + str(cmdargs.gpu)
+
+if cmdargs.modelarch is None:
+    args['model_arch'] = 'lstm'
+else:
+    args['model_arch'] = cmdargs.modelarch
+
 
 
 def asMinutes(s):
@@ -61,7 +69,12 @@ class Runner:
         args['chargenum'] = self.textData.getChargeNum()
         print(self.textData.getVocabularySize())
 
-        self.model = Model(self.textData.word2index, self.textData.index2word)
+        if args['model_arch'] == 'lstm':
+            print('Using LSTM model.')
+            self.model = LSTM_Model(self.textData.word2index, self.textData.index2word)
+        elif args['model_arch'] == 'transformer':
+            print('Using Transformer model.')
+            self.model = TransformerModel(self.textData.word2index, self.textData.index2word)
 
         self.train()
 

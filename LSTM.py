@@ -15,7 +15,7 @@ from Encoder import Encoder
 from Decoder import Decoder
 from Hyperparameters import args
 
-class Model(nn.Module):
+class LSTM_Model(nn.Module):
     """
     Implementation of a seq2seq model.
     Architecture:
