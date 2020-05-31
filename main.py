@@ -59,7 +59,7 @@ def timeSince(since, percent):
 
 class Runner:
     def __init__(self):
-        self.model_path = args['rootDir'] + '/chargemodel.mdl'
+        self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch']+ '.mdl'
 
     def main(self):
         self.textData = TextData('cail')
@@ -152,6 +152,8 @@ class Runner:
         right = 0
         total = 0
 
+        dset = []
+
         with torch.no_grad():
             for batch in self.testbatches[datasetname]:
                 x = {}
@@ -160,10 +162,25 @@ class Runner:
 
                 output_probs, output_labels = self.model.predict(x)
 
-                right += sum(output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy())
+                batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
+                right += sum(batch_correct)
                 total += x['enc_input'].size()[0]
 
+                for ind, c in enumerate(batch_correct):
+                    if c:
+                        dset.append((batch.encoderSeqs[ind], batch.label[ind], output_labels[ind]))
+
         accuracy = right / total
+
+        with open(args['rootDir'] + '/error_case_'+args['model_arch']+'.txt', 'w') as wh:
+            for d in dset:
+                wh.write(''.join([self.textData.index2word[wid] for wid in d[0]]))
+                wh.write('\t')
+                wh.write(self.textData.lawinfo['i2c'][d[1]])
+                wh.write('\t')
+                wh.write(self.textData.lawinfo['i2c'][d[2]])
+                wh.write('\n')
+        wh.close()
 
         return accuracy
 
