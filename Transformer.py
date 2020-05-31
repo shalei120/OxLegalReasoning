@@ -8,7 +8,7 @@ from torch.nn.parameter import Parameter
 
 import numpy as np
 
-import datetime
+import datetime, math
 from Hyperparameters import args
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
@@ -28,7 +28,7 @@ class PositionalEncoding(nn.Module):
 
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
-        return self.dropout(x)
+        return self.dropout(x).to(args['device'])
 
 class TransformerModel(nn.Module):
     """
@@ -59,8 +59,8 @@ class TransformerModel(nn.Module):
         self.max_length = args['maxLengthDeco']
 
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(ninp, dropout)
-        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+        self.pos_encoder = PositionalEncoding(ninp, dropout).to(args['device'])
+        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout).to(args['device'])
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.ninp = ninp
         self.decoder = nn.Linear(ninp, args['chargenum'])
@@ -77,7 +77,7 @@ class TransformerModel(nn.Module):
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'] * args['numLayers'], args['chargenum']),
+            nn.Linear(args['hiddenSize'], args['chargenum']),
             nn.LogSoftmax(dim=-1)
         ).to(args['device'])
 
@@ -89,7 +89,6 @@ class TransformerModel(nn.Module):
 
     def init_weights(self):
         initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
         self.decoder.bias.data.zero_()
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
@@ -119,10 +118,10 @@ class TransformerModel(nn.Module):
         self.classifyLabels = x['labels'].to(args['device'])
         self.batch_size = self.encoderInputs.size()[0]
 
-        src = self.embedding(self.encoderInputs)   # batch seq emb
+        src = self.embedding(self.encoderInputs).to(args['device'])  # batch seq emb
         src = src * math.sqrt(self.ninp)
-        src = self.pos_encoder(src)
-        output = self.transformer_encoder(src)    # batch seq hid
+        src = self.pos_encoder(src).to(args['device'])
+        output = self.transformer_encoder(src).to(args['device'])  # batch seq hid
 
         output_avg = torch.mean(output, dim = 1) # batch hid
 
@@ -135,13 +134,13 @@ class TransformerModel(nn.Module):
         return recon_loss_mean
 
     def predict(self, x):
-        encoderInputs = x['enc_input']
+        encoderInputs = x['enc_input'].to(args['device'])
         encoder_lengths = x['enc_len']
 
         src = self.embedding(encoderInputs)   # batch seq emb
         src = src * math.sqrt(self.ninp)
-        src = self.pos_encoder(src)
-        output = self.transformer_encoder(src)    # batch seq hid
+        src = self.pos_encoder(src).to(args['device'])
+        output = self.transformer_encoder(src).to(args['device'])    # batch seq hid
 
         output_avg = torch.mean(output, dim = 1) # batch hid
 
