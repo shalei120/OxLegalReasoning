@@ -46,6 +46,7 @@ class TextData:
         self.datasets, self.lawinfo = self.loadCorpus_CAIL()
 
         self.lawinfo['i2c'] = {i:c for c,i in self.lawinfo['c2i'].items() }
+        print(self.lawinfo['i2c'])
 
         print('set')
         # Plot some stats:

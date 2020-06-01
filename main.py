@@ -176,9 +176,9 @@ class Runner:
             for d in dset:
                 wh.write(''.join([self.textData.index2word[wid] for wid in d[0]]))
                 wh.write('\t')
-                wh.write(self.textData.lawinfo['i2c'][d[1]])
+                wh.write(self.textData.lawinfo['i2c'][int(d[1])])
                 wh.write('\t')
-                wh.write(self.textData.lawinfo['i2c'][d[2]])
+                wh.write(self.textData.lawinfo['i2c'][int(d[2])])
                 wh.write('\n')
         wh.close()
 
