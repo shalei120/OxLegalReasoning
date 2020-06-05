@@ -15,7 +15,7 @@ class HP:
         args['rootDir'] = './artifacts/'
         args['retrain_model'] = 'No'
 
-        args['maxLength'] = 100
+        args['maxLength'] = 1000
         args['vocabularySize'] = 40000
 
         args['hiddenSize'] = 100 #300
@@ -26,7 +26,7 @@ class HP:
 
         args['numEpochs'] = 100
         args['saveEvery'] = 2000
-        args['batchSize'] = 128
+        args['batchSize'] = 32
         args['learningRate'] = 0.001
         args['dropout'] = 0.9
         args['clip'] = 5.0
