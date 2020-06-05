@@ -38,7 +38,7 @@ class TransformerModel(nn.Module):
 
     """
 
-    def __init__(self, w2i, i2w, ntoken = args['vocabularySize'], ninp = args['embeddingSize'], nhead= 2, nhid = args['hiddenSize'], nlayers = 2, dropout=0.5):
+    def __init__(self, w2i, i2w, ntoken = args['vocabularySize'], ninp = args['embeddingSize'], nhead= 2, nhid = args['hiddenSize'], nlayers = 3, dropout=0.5):
         """
         :param w2i:
         :param i2w:
@@ -121,8 +121,11 @@ class TransformerModel(nn.Module):
         src = self.embedding(self.encoderInputs).to(args['device'])  # batch seq emb
         src = src * math.sqrt(self.ninp)
         src = self.pos_encoder(src).to(args['device'])
-        output = self.transformer_encoder(src).to(args['device'])  # batch seq hid
-
+        # print(src.shape)
+        src_nopad = torch.sign(self.encoderInputs).float()
+        output = self.transformer_encoder(src.transpose(0,1)).to(args['device'])  # batch seq hid
+        output = output.transpose(0,1)
+        # print("output:", output.shape)
         output_avg = torch.mean(output, dim = 1) # batch hid
 
         chargeprobs = self.ChargeClassifier(output_avg)
@@ -140,8 +143,8 @@ class TransformerModel(nn.Module):
         src = self.embedding(encoderInputs)   # batch seq emb
         src = src * math.sqrt(self.ninp)
         src = self.pos_encoder(src).to(args['device'])
-        output = self.transformer_encoder(src).to(args['device'])    # batch seq hid
-
+        output = self.transformer_encoder(src.transpose(0,1)).to(args['device'])    # batch seq hid
+        output = output.transpose(0,1)
         output_avg = torch.mean(output, dim = 1) # batch hid
 
         chargeprobs = self.ChargeClassifier(output_avg)

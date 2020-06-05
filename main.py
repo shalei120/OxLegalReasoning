@@ -78,7 +78,7 @@ class Runner:
 
         self.train()
 
-    def train(self, print_every=1000, plot_every=10, learning_rate=0.001):
+    def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
         start = time.time()
         plot_losses = []
         print_loss_total = 0  # Reset every print_every
@@ -123,7 +123,7 @@ class Runner:
                 if iter % print_every == 0:
                     print_loss_avg = print_loss_total / print_every
                     print_loss_total = 0
-                    print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
+                    print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
                                                  iter, iter / n_iters * 100, print_loss_avg))
 
                 if iter % plot_every == 0:
@@ -167,7 +167,7 @@ class Runner:
                 total += x['enc_input'].size()[0]
 
                 for ind, c in enumerate(batch_correct):
-                    if c:
+                    if not c:
                         dset.append((batch.encoderSeqs[ind], batch.label[ind], output_labels[ind]))
 
         accuracy = right / total
