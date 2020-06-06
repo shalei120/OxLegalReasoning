@@ -15,7 +15,7 @@ from Encoder import Encoder
 from Decoder import Decoder
 from Hyperparameters import args
 
-class LSTM_Model(nn.Module):
+class LSTM_IB_Model(nn.Module):
     """
     Implementation of a seq2seq model.
     Architecture:
@@ -46,14 +46,36 @@ class LSTM_Model(nn.Module):
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
 
+        self.x_2_prob_z = nn.Linear(args['hiddenSize'], 2)
+        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+
         self.ChargeClassifier = nn.Sequential(
             nn.Linear(args['hiddenSize'] * args['numLayers'], args['chargenum']),
             nn.LogSoftmax(dim=-1)
           ).to(args['device'])
         
-    def sample_z(self, mu, log_var,batch_size):
-        eps = Variable(torch.randn(batch_size, args['style_len']*2* args['numLayers'])).to(args['device'])
-        return mu + torch.einsum('ba,ba->ba', torch.exp(log_var/2),eps)
+    def sample_gumbel(self, shape, eps=1e-20):
+        U = torch.rand(shape).to(args['device'])
+        return -torch.log(-torch.log(U + eps) + eps)
+
+    def gumbel_softmax_sample(self, logits, temperature):
+        y = logits + self.sample_gumbel(logits.size())
+        return F.softmax(y / temperature, dim=-1)
+
+    def gumbel_softmax(self, logits, temperature = args['temperature']):
+        """
+        ST-gumple-softmax
+        input: [*, n_class]
+        return: flatten --> [*, n_class] an one-hot vector
+        """
+        y = self.gumbel_softmax_sample(logits, temperature)
+        shape = y.size()
+        _, ind = y.max(dim=-1)
+        y_hard = torch.zeros_like(y).view(-1, shape[-1])
+        y_hard.scatter_(1, ind.view(-1, 1), 1)
+        y_hard = y_hard.view(*shape)
+        y_hard = (y_hard - y).detach() + y
+        return y_hard
 
     def forward(self, x):
         '''
@@ -68,10 +90,24 @@ class LSTM_Model(nn.Module):
         self.encoder_lengths = x['enc_len']
         self.classifyLabels = x['labels'].to(args['device'])
         self.batch_size = self.encoderInputs.size()[0]
+        self.seqlen = self.encoderInputs.size()[1]
 
-        _, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
+        mask = torch.sign(self.encoderInputs).float()
 
-        en_hidden, en_cell = en_state   #2 batch hid
+        en_outputs, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)  # batch seq hid
+        print(en_outputs.size())
+        z_prob = self.x_2_prob_z(en_outputs) # batch seq 2
+
+        z_prob_fla = z_prob.reshape((self.batch_size * self.seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq 2  //0-1
+        sampled_seq = sampled_seq * mask
+
+        sampled_word = en_outputs[sampled_seq == 1]  # batch sampleseq hid
+        s_w_feature = self.z_to_fea(sampled_word)
+        s_w_feature = torch.max(s_w_feature, dim = 1) # batch hid
+
+
+        # en_hidden, en_cell = en_state   #2 batch hid
 
         output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(self.batch_size,-1)).to(args['device'])  # batch chargenum
 

@@ -62,9 +62,9 @@ class Encoder(nn.Module):
 
         # en_state_cat = torch.cat(en_state, dim = -1).to(self.device)
 
-        # en_outputs = torch.transpose(en_outputs, 0, 1)
+        en_outputs = torch.transpose(en_outputs, 0, 1)
 
-        return en_state
+        return en_outputs, en_state
 
     def encode(self, inputs, batch_size):
         inputs = torch.transpose(inputs, 0, 1)

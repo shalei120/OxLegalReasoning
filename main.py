@@ -22,6 +22,7 @@ import numpy as np
 import copy
 from Hyperparameters import args
 from LSTM import LSTM_Model
+from LSTM_IB import LSTM_IB_Model
 from Transformer import TransformerModel
 
 parser = argparse.ArgumentParser()
@@ -75,14 +76,15 @@ class Runner:
         elif args['model_arch'] == 'transformer':
             print('Using Transformer model.')
             self.model = TransformerModel(self.textData.word2index, self.textData.index2word)
+        elif args['model_arch'] == 'lstmib':
+            print('Using LSTM information bottleneck model.')
+            self.model = LSTM_IB_Model(self.textData.word2index, self.textData.index2word)
 
         self.train()
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
         start = time.time()
         plot_losses = []
-        print_loss_total = 0  # Reset every print_every
-        plot_loss_total = 0  # Reset every plot_every
 
         print(type(self.textData.word2index))
 
