@@ -29,7 +29,7 @@ class LSTM_IB_Model(nn.Module):
             args: parameters of the model
             textData: the dataset object
         """
-        super(Model, self).__init__()
+        super(LSTM_IB_Model, self).__init__()
         print("Model creation...")
 
         self.word2index = w2i
@@ -46,11 +46,14 @@ class LSTM_IB_Model(nn.Module):
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
 
-        self.x_2_prob_z = nn.Linear(args['hiddenSize'], 2)
-        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+        self.x_2_prob_z = nn.Sequential(
+            nn.Linear(args['hiddenSize'], 2),
+            nn.Softmax(dim=-1)
+          ).to(args['device'])
+        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'] * args['numLayers'], args['chargenum']),
+            nn.Linear(args['hiddenSize'], args['chargenum']),
             nn.LogSoftmax(dim=-1)
           ).to(args['device'])
         
@@ -77,7 +80,7 @@ class LSTM_IB_Model(nn.Module):
         y_hard = (y_hard - y).detach() + y
         return y_hard
 
-    def forward(self, x):
+    def forward(self, x, eps = 0.000001):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
@@ -95,40 +98,53 @@ class LSTM_IB_Model(nn.Module):
         mask = torch.sign(self.encoderInputs).float()
 
         en_outputs, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)  # batch seq hid
-        print(en_outputs.size())
-        z_prob = self.x_2_prob_z(en_outputs) # batch seq 2
+        # print(en_outputs.size())
+        z_prob = self.x_2_prob_z(en_outputs.to(args['device'])) # batch seq 2
 
         z_prob_fla = z_prob.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq 2  //0-1
-        sampled_seq = sampled_seq * mask
+        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
+        sampled_seq = sampled_seq * mask.unsqueeze(2)
 
-        sampled_word = en_outputs[sampled_seq == 1]  # batch sampleseq hid
+        # print(sampled_seq)
+
+        sampled_word = en_outputs * (sampled_seq[:,:,1].unsqueeze(2))  # batch seq hid
         s_w_feature = self.z_to_fea(sampled_word)
-        s_w_feature = torch.max(s_w_feature, dim = 1) # batch hid
+        s_w_feature, _ = torch.max(s_w_feature, dim = 1) # batch hid
 
-
+        I_x_z = torch.mean(-torch.log(z_prob[:,:,0]+ eps))
+        # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
 
-        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(self.batch_size,-1)).to(args['device'])  # batch chargenum
+        output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
 
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
 
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
-        return recon_loss_mean
+        return recon_loss_mean + I_x_z
 
     def predict(self, x):
-        encoderInputs = x['enc_input']
+        encoderInputs = x['enc_input'].to(args['device'])
         encoder_lengths = x['enc_len']
 
         batch_size = encoderInputs.size()[0]
-        enc_len = encoderInputs.size()[1]
+        seqlen = encoderInputs.size()[1]
+        mask = torch.sign(encoderInputs).float()
 
-        en_state = self.encoder(encoderInputs, encoder_lengths)
+        en_outputs, en_state = self.encoder(encoderInputs, encoder_lengths)
 
-        en_hidden, en_cell = en_state  # batch hid
+        z_prob = self.x_2_prob_z(en_outputs.to(args['device']))  # batch seq 2
 
-        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(batch_size,-1)).to(args['device']) # batch chargenum
+        z_prob_fla = z_prob.reshape((batch_size * seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, seqlen, 2))  # batch seq  //0-1
+        sampled_seq = sampled_seq * mask.unsqueeze(2)
+
+        sampled_word = en_outputs * (sampled_seq[:, :, 1].unsqueeze(2))  # batch seq hid
+        s_w_feature = self.z_to_fea(sampled_word)
+        s_w_feature, _ = torch.max(s_w_feature, dim=1)  # batch hid
+
+
+        output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
 
 
         return output, torch.argmax(output, dim = -1)
