@@ -85,6 +85,8 @@ class Runner:
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
         start = time.time()
         plot_losses = []
+        print_loss_total = 0  # Reset every print_every
+        plot_loss_total = 0  # Reset every plot_every
 
         print(type(self.textData.word2index))
 
@@ -97,7 +99,7 @@ class Runner:
 
         args['trainseq2seq'] = False
 
-        min_accu = -1
+        max_accu = -1
 
         for epoch in range(args['numEpochs']):
             losses = []
@@ -136,12 +138,12 @@ class Runner:
                 iter += 1
 
             accuracy = self.test('test')
-            if accuracy < min_accu or min_accu == -1:
-                print('accuracy = ', accuracy, '>= min_accuracy(', min_accu, '), saving model...')
+            if accuracy > max_accu or max_accu == -1:
+                print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
                 torch.save(self.model, self.model_path)
-                min_accu = accuracy
+                max_accu = accuracy
 
-            print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy)
+            print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', max_accu)
 
         # self.test()
         # showPlot(plot_losses)
