@@ -29,7 +29,7 @@ class LSTM_Model(nn.Module):
             args: parameters of the model
             textData: the dataset object
         """
-        super(Model, self).__init__()
+        super(LSTM_Model, self).__init__()
         print("Model creation...")
 
         self.word2index = w2i
@@ -88,7 +88,7 @@ class LSTM_Model(nn.Module):
         batch_size = encoderInputs.size()[0]
         enc_len = encoderInputs.size()[1]
 
-        en_state = self.encoder(encoderInputs, encoder_lengths)
+        _,en_state = self.encoder(encoderInputs, encoder_lengths)
 
         en_hidden, en_cell = en_state  # batch hid
 
