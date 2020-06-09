@@ -143,7 +143,7 @@ class Runner:
                 torch.save(self.model, self.model_path)
                 max_accu = accuracy
 
-            print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', max_accu)
+            print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
 
         # self.test()
         # showPlot(plot_losses)

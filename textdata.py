@@ -150,9 +150,12 @@ class TextData:
         """Load/create the conversations data
         """
         self.basedir = '../Legal/final_all_data/first_stage/'
-
         self.corpus_file_train = self.basedir + 'train.json'
         self.corpus_file_test =  self.basedir + 'test.json'
+
+        # self.basedir = '../Legal/final_all_data/exercise_contest/'
+        # self.corpus_file_train = self.basedir + 'data_train.json'
+        # self.corpus_file_test =  self.basedir + 'data_test.json'
 
         self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
 
