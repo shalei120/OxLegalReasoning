@@ -23,6 +23,7 @@ import copy
 from Hyperparameters import args
 from LSTM import LSTM_Model
 from LSTM_IB import LSTM_IB_Model
+import LSTM_IB_GAN
 from Transformer import TransformerModel
 
 parser = argparse.ArgumentParser()
@@ -73,14 +74,19 @@ class Runner:
         if args['model_arch'] == 'lstm':
             print('Using LSTM model.')
             self.model = LSTM_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
         elif args['model_arch'] == 'transformer':
             print('Using Transformer model.')
             self.model = TransformerModel(self.textData.word2index, self.textData.index2word)
+            self.train()
         elif args['model_arch'] == 'lstmib':
             print('Using LSTM information bottleneck model.')
             self.model = LSTM_IB_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
+        elif args['model_arch'] == 'lstmibgan':
+            print('Using LSTM information bottleneck GAN model.')
+            LSTM_IB_GAN.train(self.textData)
 
-        self.train()
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
         start = time.time()
@@ -137,7 +143,7 @@ class Runner:
 
                 iter += 1
 
-            accuracy = self.test('test')
+            accuracy = self.test('test', max_accu)
             if accuracy > max_accu or max_accu == -1:
                 print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
                 torch.save(self.model, self.model_path)
@@ -148,11 +154,11 @@ class Runner:
         # self.test()
         # showPlot(plot_losses)
 
-    def test(self, datasetname):
-        if not hasattr(self, 'testbatches'):
-            self.testbatches = {}
-        if datasetname not in self.testbatches:
-            self.testbatches[datasetname] = self.textData.getBatches(datasetname)
+    def test(self, datasetname, max_accuracy):
+        # if not hasattr(self, 'testbatches'):
+        #     self.testbatches = {}
+        # if datasetname not in self.testbatches:
+        self.testbatches[datasetname] = self.textData.getBatches(datasetname)
         right = 0
         total = 0
 
@@ -176,15 +182,16 @@ class Runner:
 
         accuracy = right / total
 
-        with open(args['rootDir'] + '/error_case_'+args['model_arch']+'.txt', 'w') as wh:
-            for d in dset:
-                wh.write(''.join([self.textData.index2word[wid] for wid in d[0]]))
-                wh.write('\t')
-                wh.write(self.textData.lawinfo['i2c'][int(d[1])])
-                wh.write('\t')
-                wh.write(self.textData.lawinfo['i2c'][int(d[2])])
-                wh.write('\n')
-        wh.close()
+        if accuracy > max_accuracy:
+            with open(args['rootDir'] + '/error_case_'+args['model_arch']+'.txt', 'w') as wh:
+                for d in dset:
+                    wh.write(''.join([self.textData.index2word[wid] for wid in d[0]]))
+                    wh.write('\t')
+                    wh.write(self.textData.lawinfo['i2c'][int(d[1])])
+                    wh.write('\t')
+                    wh.write(self.textData.lawinfo['i2c'][int(d[2])])
+                    wh.write('\n')
+            wh.close()
 
         return accuracy
 

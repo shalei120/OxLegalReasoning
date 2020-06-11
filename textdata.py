@@ -55,6 +55,8 @@ class TextData:
         if args['playDataset']:
             self.playDataset()
 
+        self.batches = {}
+
     def _printStats(self, corpusname):
         print('Loaded {}: {} words, {} QA'.format(corpusname, len(self.word2index), len(self.trainingSamples)))
 
@@ -104,26 +106,28 @@ class TextData:
         Return:
             list<Batch>: Get a list of the batches for the next epoch
         """
-        self.shuffle()
+        if setname not in self.batches:
+            self.shuffle()
 
+            batches = []
+            print(len(self.datasets[setname]))
+            def genNextSamples():
+                """ Generator over the mini-batch training samples
+                """
+                for i in range(0, self.getSampleSize(setname), args['batchSize']):
+                    yield self.datasets[setname][i:min(i + args['batchSize'], self.getSampleSize(setname))]
 
-        batches = []
-        print(len(self.datasets[setname]))
-        def genNextSamples():
-            """ Generator over the mini-batch training samples
-            """
-            for i in range(0, self.getSampleSize(setname), args['batchSize']):
-                yield self.datasets[setname][i:min(i + args['batchSize'], self.getSampleSize(setname))]
+            # TODO: Should replace that by generator (better: by tf.queue)
 
-        # TODO: Should replace that by generator (better: by tf.queue)
+            for index, samples in enumerate(genNextSamples()):
+                # print([self.index2word[id] for id in samples[5][0]], samples[5][2])
+                batch = self._createBatch(samples)
+                batches.append(batch)
 
-        for index, samples in enumerate(genNextSamples()):
-            # print([self.index2word[id] for id in samples[5][0]], samples[5][2])
-            batch = self._createBatch(samples)
-            batches.append(batch)
+            self.batches[setname] = batches
 
         # print([self.index2word[id] for id in batches[2].encoderSeqs[5]], batches[2].raws[5])
-        return batches
+        return self.batches[setname]
 
     def getSampleSize(self, setname = 'train'):
         """Return the size of the dataset
