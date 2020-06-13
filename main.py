@@ -24,6 +24,7 @@ from Hyperparameters import args
 from LSTM import LSTM_Model
 from LSTM_IB import LSTM_IB_Model
 import LSTM_IB_GAN
+from LSTM_IB_complete import LSTM_IB_CP_Model
 from Transformer import TransformerModel
 
 parser = argparse.ArgumentParser()
@@ -86,6 +87,10 @@ class Runner:
         elif args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model.')
             LSTM_IB_GAN.train(self.textData)
+        elif args['model_arch'] == 'lstmibcp':
+            print('Using LSTM information bottleneck model. -- complete words')
+            self.model = LSTM_IB_CP_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
 
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
