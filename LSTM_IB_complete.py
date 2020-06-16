@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.parameter import Parameter
-
+import copy
 import numpy as np
 
 import datetime
@@ -107,9 +107,10 @@ class LSTM_IB_CP_Model(nn.Module):
 
         # print(sampled_seq)
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
+        sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32)  + sampled_num
         sampled_word = en_outputs * (sampled_seq[:,:,1].unsqueeze(2))  # batch seq hid
         s_w_feature = self.z_to_fea(sampled_word)
-        s_w_feature = torch.sum(s_w_feature, dim = 1) / sampled_num # batch hid
+        s_w_feature = torch.sum(s_w_feature, dim = 1) / sampled_num.unsqueeze(1) # batch hid
 
         I_x_z = torch.mean(-torch.log(z_prob[:,:,0]+ eps))
         # print(I_x_z)
@@ -119,11 +120,12 @@ class LSTM_IB_CP_Model(nn.Module):
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
-
         unsampled_num = torch.sum(sampled_seq[:,:,0], dim = 1) # batch
+        unsampled_num = (unsampled_num == 0).to(args['device'], dtype=torch.float32) + unsampled_num
         unsampled_word = en_outputs * (sampled_seq[:,:,0].unsqueeze(2))  # batch seq hid
         no_info_feature = self.z_to_fea(unsampled_word)
-        no_info_feature = torch.sum(no_info_feature, dim = 1) / unsampled_num # batch hid
+        no_info_feature = torch.sum(no_info_feature, dim = 1) / unsampled_num.unsqueeze(1) # batch hid
+
         noinfo_output = self.ChargeClassifier(no_info_feature).to(args['device'])  # batch chargenum
         noinfo_recon_loss = torch.sum(noinfo_output * torch.exp(noinfo_output), dim = 1)  # - entropy
         noinfo_recon_loss_mean = torch.mean(noinfo_recon_loss).to(args['device'])
@@ -146,12 +148,14 @@ class LSTM_IB_CP_Model(nn.Module):
         sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, seqlen, 2))  # batch seq  //0-1
         sampled_seq = sampled_seq * mask.unsqueeze(2)
 
+        sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
+        sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32)  + sampled_num
         sampled_word = en_outputs * (sampled_seq[:, :, 1].unsqueeze(2))  # batch seq hid
         s_w_feature = self.z_to_fea(sampled_word)
-        s_w_feature, _ = torch.max(s_w_feature, dim=1)  # batch hid
+        s_w_feature = torch.sum(s_w_feature, dim = 1) / sampled_num.unsqueeze(1) # batch hid
 
 
         output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
 
 
-        return output, torch.argmax(output, dim = -1)
+        return output, (torch.argmax(output, dim = -1), sampled_seq)

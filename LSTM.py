@@ -46,8 +46,9 @@ class LSTM_Model(nn.Module):
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
 
+        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'] * args['numLayers'], args['chargenum']),
+            nn.Linear(args['hiddenSize'], args['chargenum']),
             nn.LogSoftmax(dim=-1)
           ).to(args['device'])
         
@@ -69,11 +70,15 @@ class LSTM_Model(nn.Module):
         self.classifyLabels = x['labels'].to(args['device'])
         self.batch_size = self.encoderInputs.size()[0]
 
-        _, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
+        en_output, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
 
         en_hidden, en_cell = en_state   #2 batch hid
 
-        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(self.batch_size,-1)).to(args['device'])  # batch chargenum
+
+        s_w_feature = self.z_to_fea(en_output)
+        s_w_feature = torch.mean(s_w_feature, dim = 1)# batch hid
+
+        output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
 
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
 
@@ -88,11 +93,13 @@ class LSTM_Model(nn.Module):
         batch_size = encoderInputs.size()[0]
         enc_len = encoderInputs.size()[1]
 
-        _,en_state = self.encoder(encoderInputs, encoder_lengths)
+        en_output, en_state = self.encoder(encoderInputs, encoder_lengths)
 
+        s_w_feature = self.z_to_fea(en_output)
+        s_w_feature = torch.mean(s_w_feature, dim = 1)# batch hid
         en_hidden, en_cell = en_state  # batch hid
 
-        output = self.ChargeClassifier(en_hidden.transpose(0,1).reshape(batch_size,-1)).to(args['device']) # batch chargenum
+        output = self.ChargeClassifier(s_w_feature).to(args['device']) # batch chargenum
 
 
         return output, torch.argmax(output, dim = -1)

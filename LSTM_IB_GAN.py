@@ -7,13 +7,21 @@ import torch.optim as optim
 from torch.nn.parameter import Parameter
 
 import numpy as np
-
 import datetime
-
-
+import time, math
 from Encoder import Encoder
 from Decoder import Decoder
 from Hyperparameters import args
+def asMinutes(s):
+    m = math.floor(s / 60)
+    s -= m * 60
+    return '%dm %ds' % (m, s)
+def timeSince(since, percent):
+    now = time.time()
+    s = now - since
+    es = s / (percent)
+    rs = es - s
+    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 class Discriminator(nn.Module):
     def __init__(self):
@@ -36,8 +44,9 @@ class Discriminator(nn.Module):
         output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
         recon_loss = self.NLLloss(output, labels).to(args['device'])
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
-        max_prob, _ = torch.max(output, dim = -1) # batch
-        return recon_loss_mean, torch.mean(max_prob)
+        # max_prob, _ = torch.max(output, dim = -1) # batch
+        G_judge_score =  torch.mean(torch.sum(output * torch.exp(output), dim = 1))
+        return recon_loss_mean, G_judge_score
 
 class LSTM_IB_GAN_Model(nn.Module):
     """
@@ -142,9 +151,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         # en_hidden, en_cell = en_state   #2 batch hid
 
         output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
-
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
-
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
         return recon_loss_mean + I_x_z, unsampled_word
@@ -208,6 +215,10 @@ def train(textData, model_path = args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl
             # ---------------------
             #  Train Discriminator
             # ---------------------
+            # for param in G_model.parameters():
+            #     param.requires_grad = False
+            # for param in D_model.parameters():
+            #     param.requires_grad = True
 
             D_optimizer.zero_grad()
             x = {}
@@ -228,6 +239,10 @@ def train(textData, model_path = args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl
             # -----------------
             #  Train Generator
             # -----------------
+            # for param in G_model.parameters():
+            #     param.requires_grad = True
+            # for param in D_model.parameters():
+            #     param.requires_grad = False
             G_optimizer.zero_grad()
 
             Gloss = Gloss_pure + G_judge_score
@@ -263,7 +278,7 @@ def train(textData, model_path = args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl
             torch.save([G_model, D_model], model_path)
             max_accu = accuracy
 
-        print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
+        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
 
     # self.test()
     # showPlot(plot_losses)
