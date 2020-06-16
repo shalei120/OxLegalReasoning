@@ -72,7 +72,7 @@ class LSTM_att_Model(nn.Module):
 
         en_hidden, en_cell = en_state   #2 batch hid
         en_hidden = en_hidden.transpose(0,1)
-        en_hidden = en_hidden.view(self.batch_size,-1)
+        en_hidden = en_hidden.reshape(self.batch_size,args['hiddenSize'] * 2)
         att1 = torch.einsum('bsh,hg->bsg', en_output, self.attm)
         att2 = torch.einsum('bsg,bg->bs', att1, en_hidden)
         att2 = self.softmax(att2)
@@ -100,7 +100,7 @@ class LSTM_att_Model(nn.Module):
 
         en_hidden, en_cell = en_state  # 2 batch hid
         en_hidden = en_hidden.transpose(0, 1)
-        en_hidden = en_hidden.view(self.batch_size, -1)
+        en_hidden = en_hidden.reshape(self.batch_size,args['hiddenSize'] * 2)
         att1 = torch.einsum('bsh,hg->bsg', en_output, self.attm)
         att2 = torch.einsum('bsg,bg->bs', att1, en_hidden)
         att2 = self.softmax(att2)
