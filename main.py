@@ -163,20 +163,28 @@ class Runner:
         # if not hasattr(self, 'testbatches'):
         #     self.testbatches = {}
         # if datasetname not in self.testbatches:
-        self.testbatches[datasetname] = self.textData.getBatches(datasetname)
+        # self.testbatches[datasetname] = self.textData.getBatches(datasetname)
         right = 0
         total = 0
 
         dset = []
 
         with torch.no_grad():
-            for batch in self.testbatches[datasetname]:
+            pppt = False
+            for batch in self.textData.getBatches(datasetname):
                 x = {}
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
                 x['enc_len'] = batch.encoder_lens
 
                 output_probs, output_labels = self.model.predict(x)
-
+                if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib':
+                    output_labels, sampled_words, wordsamplerate = output_labels
+                    if not pppt:
+                        pppt = True
+                        for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
+                            if choice[1] == 1:
+                                print(self.textData.index2word[w], end='')
+                        print('sample rate: ', wordsamplerate[0])
                 batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
                 right += sum(batch_correct)
                 total += x['enc_input'].size()[0]
