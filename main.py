@@ -22,6 +22,7 @@ import numpy as np
 import copy
 from Hyperparameters import args
 from LSTM import LSTM_Model
+from LSTM_att import LSTM_att_Model
 from LSTM_IB import LSTM_IB_Model
 import LSTM_IB_GAN
 from LSTM_IB_complete import LSTM_IB_CP_Model
@@ -75,6 +76,10 @@ class Runner:
         if args['model_arch'] == 'lstm':
             print('Using LSTM model.')
             self.model = LSTM_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
+        elif args['model_arch'] == 'lstmatt':
+            print('Using LSTM attention model.')
+            self.model = LSTM_att_Model(self.textData.word2index, self.textData.index2word)
             self.train()
         elif args['model_arch'] == 'transformer':
             print('Using Transformer model.')
