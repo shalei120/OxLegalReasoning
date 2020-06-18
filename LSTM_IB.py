@@ -47,8 +47,7 @@ class LSTM_IB_Model(nn.Module):
         self.softmax = nn.Softmax(dim = -1)
 
         self.x_2_prob_z = nn.Sequential(
-            nn.Linear(args['hiddenSize'], 2),
-            nn.Softmax(dim=-1)
+            nn.Linear(args['hiddenSize'], 2)
           ).to(args['device'])
         self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
@@ -99,10 +98,11 @@ class LSTM_IB_Model(nn.Module):
 
         en_outputs, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         # print(en_outputs.size())
-        z_prob = self.x_2_prob_z(en_outputs.to(args['device'])) # batch seq 2
+        z_logits = self.x_2_prob_z(en_outputs.to(args['device'])) # batch seq 2
 
-        z_prob_fla = z_prob.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
+
+        z_logits_fla = z_logits.reshape((self.batch_size * self.seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_logits_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
         sampled_seq = sampled_seq * mask.unsqueeze(2)
 
         # print(sampled_seq)
@@ -110,12 +110,16 @@ class LSTM_IB_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32)  + sampled_num
         sampled_word = en_outputs * (sampled_seq[:,:,1].unsqueeze(2))  # batch seq hid
+        # print(sampled_word[0,:,:])
+        # exit()
         s_w_feature = self.z_to_fea(sampled_word)
         s_w_feature = torch.sum(s_w_feature, dim = 1)/ sampled_num.unsqueeze(1)# batch hid
 
-        I_x_z = torch.mean(-torch.log(z_prob[:,:,0]+ eps))
+        z_prob = self.softmax(z_logits)
+        I_x_z = torch.mean(torch.sum(-torch.log(z_prob[:,:,0]+ eps), dim = 1))
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
+        # print(z_prob[0,:,:], sampled_num, I_x_z, torch.sum(-torch.log(z_prob[0,:,0]+ eps)))
 
         output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
 
@@ -123,7 +127,12 @@ class LSTM_IB_Model(nn.Module):
 
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
-        return recon_loss_mean + I_x_z * 50
+
+        # wordnum = torch.sum(mask, dim = 1)
+        # print(sampled_num / wordnum)
+        # exit()
+
+        return recon_loss_mean + I_x_z * 0.1
 
     def predict(self, x):
         encoderInputs = x['enc_input'].to(args['device'])
@@ -135,10 +144,10 @@ class LSTM_IB_Model(nn.Module):
 
         en_outputs, en_state = self.encoder(encoderInputs, encoder_lengths)
 
-        z_prob = self.x_2_prob_z(en_outputs.to(args['device']))  # batch seq 2
+        z_logits = self.x_2_prob_z(en_outputs.to(args['device']))  # batch seq 2
 
-        z_prob_fla = z_prob.reshape((batch_size * seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, seqlen, 2))  # batch seq  //0-1
+        z_logits_fla = z_logits.reshape((batch_size * seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_logits_fla).reshape((batch_size, seqlen, 2))  # batch seq  //0-1
         sampled_seq = sampled_seq * mask.unsqueeze(2)
 
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
