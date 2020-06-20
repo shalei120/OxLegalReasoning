@@ -27,6 +27,7 @@ from LSTM_IB import LSTM_IB_Model
 import LSTM_IB_GAN
 from LSTM_IB_complete import LSTM_IB_CP_Model
 from Transformer import TransformerModel
+from LSTM_capIB import LSTM_capsule_IB_Model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
@@ -95,6 +96,10 @@ class Runner:
         elif args['model_arch'] == 'lstmibcp':
             print('Using LSTM information bottleneck model. -- complete words')
             self.model = LSTM_IB_CP_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
+        elif args['model_arch'] == 'lstmcapib':
+            print('Using LSTM capsule information bottleneck model.')
+            self.model = LSTM_capsule_IB_Model(self.textData.word2index, self.textData.index2word)
             self.train()
 
 
@@ -182,7 +187,7 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
 
                 output_probs, output_labels = self.model.predict(x)
-                if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib':
+                if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmcapib':
                     output_labels, sampled_words, wordsamplerate = output_labels
                     if not pppt:
                         pppt = True
