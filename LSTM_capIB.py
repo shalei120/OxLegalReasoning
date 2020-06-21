@@ -92,8 +92,11 @@ class LSTM_capsule_IB_Model(nn.Module):
         :param mask:  batch seq
         :return: batch seq classnum
         '''
+        if len(logits.size()) == 3:
+            explogits = torch.exp(logits) * mask.unsqueeze(2)
+        elif len(logits.size()) == 2:
+            explogits = torch.exp(logits) * mask
 
-        explogits = torch.exp(logits) * mask.unsqueeze(2)
         explogits_Z = torch.sum(explogits, dim = 1, keepdim=True)
         softmax = explogits / explogits_Z
 
@@ -149,10 +152,10 @@ class LSTM_capsule_IB_Model(nn.Module):
         Capsule
         '''
         capsule_uji = self.cap_Wij(sampled_word)  # b s cap
-        capsule_b = torch.zeros(self.batch_size, self.seqlen, args['chargenum']).to(args['device']).require_grad(False)
+        capsule_b = torch.zeros(self.batch_size, self.seqlen, args['chargenum']).to(args['device'])
 
         for _ in range(3):
-            capsule_c = self.mask_softmax(capsule_b, sampled_seq)  # b s chargenum
+            capsule_c = self.mask_softmax(capsule_b, sampled_seq[:,:,1])  # b s chargenum
             capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
             capsule_v = self.squash(capsule_s) # b chargenum cap
             capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji) # b s chargenum
@@ -169,20 +172,34 @@ class LSTM_capsule_IB_Model(nn.Module):
 
         answer = F.one_hot(self.classifyLabels, num_classes=args['chargenum']) # batch chargenum
         lambda_c = 0.5
-        capsule_loss = answer * cap_pos + lambda_c * (1-answer) * cap_neg
+        capsule_loss = answer.float() * cap_pos + lambda_c * (1-answer.float()) * cap_neg
+        capsule_loss  = torch.mean(torch.sum(capsule_loss,dim = 1))
 
 
 
         xz_mock,_ = torch.max(capsule_b ,dim =2 ) # b s
-        xz_mock_p = self.softmax(xz_mock)
+        xz_mock_p = self.mask_softmax(xz_mock, sampled_seq[:,:,1])
 
-        z_regu = torch.sum(xz_mock_p * torch.log(z_prob[:,:,1]) * sampled_seq, dim = 1)
+
+        # z_regu = - torch.sum(xz_mock_p * torch.log(z_prob[:,:,1]+eps) * sampled_seq[:,:,1], dim = 1)
+        # z_regu = torch.mean(z_regu)
+        xz_mock_p = xz_mock_p.unsqueeze(2) # b s 1
+        diff_xz_mock = torch.triu(xz_mock_p - xz_mock_p.transpose(1,2))
+        pred_z_prob = z_prob[:, :, 1].unsqueeze(2) # b s 1
+        diff_pred_z_prob = torch.triu(pred_z_prob - pred_z_prob.transpose(1,2))
+
+        # print(diff_xz_mock)
+
+        z_regu = torch.sum(self.relu(0.1 - diff_xz_mock * diff_pred_z_prob), dim = 2)
+        z_regu = torch.sum(z_regu, dim = 1)
         z_regu = torch.mean(z_regu)
+
 
         # output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
         # recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
         # recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
+        # print(capsule_loss, z_regu)
         loss = capsule_loss + 0.05 * I_x_z + z_regu
         return loss
 
@@ -210,10 +227,10 @@ class LSTM_capsule_IB_Model(nn.Module):
                 Capsule
                 '''
         capsule_uji = self.cap_Wij(sampled_word)  # b s cap
-        capsule_b = torch.zeros(batch_size, seqlen, args['chargenum']).to(args['device']).require_grad(False)
+        capsule_b = torch.zeros(batch_size, seqlen, args['chargenum']).to(args['device'])
 
         for _ in range(3):
-            capsule_c = self.mask_softmax(capsule_b, sampled_seq)  # b s chargenum
+            capsule_c = self.mask_softmax(capsule_b, sampled_seq[:,:,1])  # b s chargenum
             capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
             capsule_v = self.squash(capsule_s)  # b chargenum cap
             capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji)  # b s chargenum
