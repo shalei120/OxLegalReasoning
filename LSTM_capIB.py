@@ -47,21 +47,35 @@ class LSTM_capsule_IB_Model(nn.Module):
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim = -1)
 
-        self.x_2_prob_z = nn.Sequential(
-            nn.Linear(args['hiddenSize'], 2),
-            nn.Softmax(dim=-1)
+        # self.x_2_prob_z = nn.Sequential(
+        #     nn.Linear(args['hiddenSize'], 2),
+        #     nn.Softmax(dim=-1)
+        #   ).to(args['device'])
+        self.x_2_prob_z_weight = Parameter(torch.rand(args['chargenum'], args['hiddenSize'], 2)).to(args['device'])
+        self.z_to_fea = nn.Sequential(
+            nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device']),
+            nn.Tanh()
           ).to(args['device'])
-        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']),
-            nn.LogSoftmax(dim=-1)
+            nn.Linear(args['hiddenSize'], 1),
+            nn.Sigmoid()
           ).to(args['device'])
 
         '''
         capsule
         '''
-        self.cap_Wij = nn.Linear(args['hiddenSize'], 50,bias=False).to(args['device'])
+        self.cap_Wij = nn.Linear(args['hiddenSize'], args['capsuleSize'],bias=False).to(args['device'])
+
+        # self.z2_mean = Parameter(torch.rand(args['chargenum'], args['capsuleSize'])).to(args['device'])
+        # self.z2_logvar = Parameter(torch.rand(args['chargenum'], args['capsuleSize'])).to(args['device'])
+
+
+        self.q_linear = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+        self.v_linear = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+        self.k_linear = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+        self.z2_hid2mean = nn.Linear(args['hiddenSize'], args['hiddenSize'])
+        self.z2_hid2logvar = nn.Linear(args['hiddenSize'], args['hiddenSize'])
         
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -111,6 +125,29 @@ class LSTM_capsule_IB_Model(nn.Module):
         v = (s_norm / (1+ s_norm**2)) * s
         return v
 
+    def self_attention(self, q, k, v, d_k, mask=None, dropout=None):
+        # k = self.k_linear(k)   # batch seq hid
+        # q = self.q_linear(q)
+        # v = self.v_linear(v)
+
+        # scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
+        scores = torch.einsum('bsh,bth->bst', q, k) / math.sqrt(d_k)
+
+        if mask is not None:
+            scores = scores.masked_fill_(mask.unsqueeze(2) == 0, -1e9)  # in place
+            scores = scores.masked_fill_(mask.unsqueeze(1) == 0, -1e9)  # in place
+        scores = self.softmax(scores)
+
+        if dropout is not None:
+            scores = dropout(scores)
+
+        output = torch.einsum('bst,bth->bsh',scores, v)
+        return output
+
+    def sample_z(self, mu, log_var):
+        eps = Variable(torch.randn(mu.size())).to(args['device'])
+        return mu + torch.exp(log_var / 2) * eps
+
     def forward(self, x, eps = 0.000001):
         '''
         :param encoderInputs: [batch, enc_len]
@@ -130,39 +167,49 @@ class LSTM_capsule_IB_Model(nn.Module):
 
         en_outputs, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         # print(en_outputs.size())
-        z_prob = self.x_2_prob_z(en_outputs.to(args['device'])) # batch seq 2
 
-        z_prob_fla = z_prob.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
-        sampled_seq = sampled_seq * mask.unsqueeze(2)
+        z_prob = torch.einsum('chy,bsh->bcsy', self.x_2_prob_z_weight, en_outputs)# batch chargenum seq 2
+
+        z_prob_fla = z_prob.reshape((self.batch_size  * args['chargenum']* self.seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, args['chargenum'], self.seqlen,  2))
+                                                                # batch chargenum seq 2 //0-1
+        sampled_seq = sampled_seq * mask.unsqueeze(2).unsqueeze(3)
 
         # print(sampled_seq)
 
-        sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
+        sampled_num = torch.sum(sampled_seq[:,:,:,1], dim = 1) # batch chargenum
         sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32)  + sampled_num
-        sampled_word = en_outputs * (sampled_seq[:,:,1].unsqueeze(2))  # batch seq hid
+        sampled_word = en_outputs.unsqueeze(1) * (sampled_seq[:,:,:,1].unsqueeze(3))  # batch  chargenum seq hid
         # s_w_feature = self.z_to_fea(sampled_word)
         # s_w_feature = torch.sum(s_w_feature, dim = 1)/ sampled_num.unsqueeze(1)# batch hid
 
-        I_x_z = torch.mean(-torch.log(z_prob[:,:,0]+ eps))
+        '''
+        z1 -> z2
+        '''
+        sampled_word_bc = sampled_word.reshape(self.batch_size  * args['chargenum'], self.seqlen,args['hiddenSize'] )
+        z2_words = self.self_attention(sampled_word_bc, sampled_word_bc, sampled_word_bc,
+                                       d_k=args['hiddenSize'],
+                                       mask=sampled_seq[:,:,:,1].reshape(self.batch_size * args['chargenum'], self.seqlen))
+        z2_words = z2_words.reshape(self.batch_size, args['chargenum'], self.seqlen, args['hiddenSize'])
+        z2_hid = z2_words.sum(dim = 2)  # batch chargenum hid
+        z2_mean = self.z2_hid2mean(z2_hid)
+        z2_logvar = self.z2_hid2logvar(z2_hid)
+
+        z2 = self.sample_z(z2_mean, z2_logvar) # batch chargenum hid
+
+
+
+
+        I_x_z = torch.mean(-torch.log(z_prob[:,:,:,0]+ eps))
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
 
         '''
         Capsule
         '''
-        capsule_uji = self.cap_Wij(sampled_word)  # b s cap
-        capsule_b = torch.zeros(self.batch_size, self.seqlen, args['chargenum']).to(args['device'])
-
-        for _ in range(3):
-            capsule_c = self.mask_softmax(capsule_b, sampled_seq[:,:,1])  # b s chargenum
-            capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
-            capsule_v = self.squash(capsule_s) # b chargenum cap
-            capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji) # b s chargenum
-            capsule_b += capsule_delta.detach()
 
 
-        capsule_v_norm = torch.norm(capsule_v, dim = 2)# b chargenum
+        capsule_v_norm = self.ChargeClassifier(z2)    # b chargenum
 
         m_plus = 0.9
         m_minus = 0.1
@@ -177,22 +224,22 @@ class LSTM_capsule_IB_Model(nn.Module):
 
 
 
-        xz_mock,_ = torch.max(capsule_b ,dim =2 ) # b s
-        xz_mock_p = self.mask_softmax(xz_mock, sampled_seq[:,:,1])
-
-
-        # z_regu = - torch.sum(xz_mock_p * torch.log(z_prob[:,:,1]+eps) * sampled_seq[:,:,1], dim = 1)
+        # xz_mock,_ = torch.max(capsule_b ,dim =2 ) # b s
+        # xz_mock_p = self.mask_softmax(xz_mock, sampled_seq[:,:,1])
+        #
+        #
+        # # z_regu = - torch.sum(xz_mock_p * torch.log(z_prob[:,:,1]+eps) * sampled_seq[:,:,1], dim = 1)
+        # # z_regu = torch.mean(z_regu)
+        # xz_mock_p = xz_mock_p.unsqueeze(2) # b s 1
+        # diff_xz_mock = torch.triu(xz_mock_p - xz_mock_p.transpose(1,2))
+        # pred_z_prob = z_prob[:, :, 1].unsqueeze(2) # b s 1
+        # diff_pred_z_prob = torch.triu(pred_z_prob - pred_z_prob.transpose(1,2))
+        #
+        # # print(diff_xz_mock)
+        #
+        # z_regu = torch.sum(self.relu(0.1 - diff_xz_mock * diff_pred_z_prob), dim = 2)
+        # z_regu = torch.sum(z_regu, dim = 1)
         # z_regu = torch.mean(z_regu)
-        xz_mock_p = xz_mock_p.unsqueeze(2) # b s 1
-        diff_xz_mock = torch.triu(xz_mock_p - xz_mock_p.transpose(1,2))
-        pred_z_prob = z_prob[:, :, 1].unsqueeze(2) # b s 1
-        diff_pred_z_prob = torch.triu(pred_z_prob - pred_z_prob.transpose(1,2))
-
-        # print(diff_xz_mock)
-
-        z_regu = torch.sum(self.relu(0.1 - diff_xz_mock * diff_pred_z_prob), dim = 2)
-        z_regu = torch.sum(z_regu, dim = 1)
-        z_regu = torch.mean(z_regu)
 
 
         # output = self.ChargeClassifier(s_w_feature).to(args['device'])  # batch chargenum
@@ -200,7 +247,7 @@ class LSTM_capsule_IB_Model(nn.Module):
         # recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
         # print(capsule_loss, z_regu)
-        loss = capsule_loss + 0.05 * I_x_z + z_regu
+        loss = capsule_loss + 0.05 * I_x_z
         return loss
 
     def predict(self, x):
@@ -213,31 +260,39 @@ class LSTM_capsule_IB_Model(nn.Module):
 
         en_outputs, en_state = self.encoder(encoderInputs, encoder_lengths)
 
-        z_prob = self.x_2_prob_z(en_outputs.to(args['device']))  # batch seq 2
+        z_prob = torch.einsum('chy,bsh->bcsy', self.x_2_prob_z_weight, en_outputs)  # batch chargenum seq 2
 
-        z_prob_fla = z_prob.reshape((batch_size * seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, seqlen, 2))  # batch seq  //0-1
-        sampled_seq = sampled_seq * mask.unsqueeze(2)
+        z_prob_fla = z_prob.reshape((batch_size * args['chargenum'] * seqlen, 2))
+        sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, args['chargenum'], seqlen, 2))
+        # batch chargenum seq 2 //0-1
+        sampled_seq = sampled_seq * mask.unsqueeze(2).unsqueeze(3)
 
-        sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
-        sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32)  + sampled_num
-        sampled_word = en_outputs * (sampled_seq[:, :, 1].unsqueeze(2))  # batch seq hid
+        # print(sampled_seq)
+
+        sampled_num = torch.sum(sampled_seq[:, :, :, 1], dim=1)  # batch chargenum
+        sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32) + sampled_num
+        sampled_word = en_outputs.unsqueeze(1) * (sampled_seq[:, :, :, 1].unsqueeze(3))
 
         '''
-                Capsule
-                '''
-        capsule_uji = self.cap_Wij(sampled_word)  # b s cap
-        capsule_b = torch.zeros(batch_size, seqlen, args['chargenum']).to(args['device'])
+        z1 -> z2
+        '''
+        sampled_word_bc = sampled_word.reshape(batch_size * args['chargenum'], seqlen, args['hiddenSize'])
+        z2_words = self.self_attention(sampled_word_bc, sampled_word_bc, sampled_word_bc,
+                                       d_k=args['hiddenSize'],
+                                       mask=sampled_seq[:, :, :, 1].reshape(batch_size * args['chargenum'],
+                                                                            seqlen))
+        z2_words = z2_words.reshape(batch_size, args['chargenum'], seqlen, args['hiddenSize'])
+        z2_hid = z2_words.sum(dim=2)  # batch chargenum hid
+        z2_mean = self.z2_hid2mean(z2_hid)
+        z2_logvar = self.z2_hid2logvar(z2_hid)
 
-        for _ in range(3):
-            capsule_c = self.mask_softmax(capsule_b, sampled_seq[:,:,1])  # b s chargenum
-            capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
-            capsule_v = self.squash(capsule_s)  # b chargenum cap
-            capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji)  # b s chargenum
-            capsule_b += capsule_delta.detach()
+        z2 = self.sample_z(z2_mean, z2_logvar)
 
-        capsule_v_norm = torch.norm(capsule_v, dim=2)  # b chargenum
+        '''
+        Capsule
+        '''
+        capsule_v_norm = self.ChargeClassifier(z2)   # b chargenum
 
-        wordnum = torch.sum(mask, dim = 1)
+        wordnum = torch.sum(mask, dim = 1, keepdim=True)
 
         return capsule_v_norm,  (torch.argmax(capsule_v_norm, dim = -1), sampled_seq, sampled_num/wordnum)
