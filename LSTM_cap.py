@@ -110,14 +110,14 @@ class LSTM_capsule_Model(nn.Module):
         Capsule
         '''
         capsule_uji = self.cap_Wij(en_outputs)  # b s cap
-        capsule_b = torch.zeros(self.batch_size, self.seqlen, args['chargenum']).to(args['device'])
+        capsule_b = Parameter(torch.zeros(self.batch_size, self.seqlen, args['chargenum'])).to(args['device'])
 
         for _ in range(3):
             capsule_c = self.mask_softmax(capsule_b, mask)  # b s chargenum
             capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
             capsule_v = self.squash(capsule_s) # b chargenum cap
             capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji) # b s chargenum
-            capsule_b += capsule_delta.detach()
+            capsule_b = capsule_delta
 
 
         capsule_v_norm = torch.norm(capsule_v, dim = 2)# b chargenum
@@ -130,10 +130,15 @@ class LSTM_capsule_Model(nn.Module):
 
         answer = F.one_hot(self.classifyLabels, num_classes=args['chargenum']) # batch chargenum
         lambda_c = 0.5
-        capsule_loss = answer * cap_pos + lambda_c * (1-answer) * cap_neg
+        capsule_loss = answer.float() * cap_pos + lambda_c * (1-answer.float()) * cap_neg
 
-        loss = capsule_loss
-        return loss
+        loss = torch.sum(capsule_loss, dim = 1)
+
+        # self.final = Parameter(torch.rand(50)).to(args['device'])
+        # pred_logit = torch.einsum('bcp,p->bc', capsule_v, self.final)
+        # pred = self.softmax(pred_logit)
+        # loss = self.CEloss(pred, self.classifyLabels).to(args['device'])
+        return torch.mean(loss)
 
     def predict(self, x):
         encoderInputs = x['enc_input'].to(args['device'])
@@ -152,7 +157,7 @@ class LSTM_capsule_Model(nn.Module):
         capsule_b = torch.zeros(batch_size, seqlen, args['chargenum']).to(args['device'])
 
         for _ in range(3):
-            capsule_c = self.mask_softmax(capsule_b, sampled_seq)  # b s chargenum
+            capsule_c = self.mask_softmax(capsule_b, mask)  # b s chargenum
             capsule_s = torch.einsum('bsc,bsn->bnc', capsule_uji, capsule_c)
             capsule_v = self.squash(capsule_s)  # b chargenum cap
             capsule_delta = torch.einsum('bcp,bsp->bsc', capsule_v, capsule_uji)  # b s chargenum
@@ -160,5 +165,8 @@ class LSTM_capsule_Model(nn.Module):
 
         capsule_v_norm = torch.norm(capsule_v, dim=2)  # b chargenum
 
+        # pred_logit = torch.einsum('bcp,p->bc', capsule_v, self.final)
+
 
         return capsule_v_norm,  torch.argmax(capsule_v_norm, dim = -1)
+        # return pred_logit,  torch.argmax(pred_logit, dim = -1)
