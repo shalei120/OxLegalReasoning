@@ -173,7 +173,7 @@ class LSTM_capsule_IB_Model(nn.Module):
         z_prob_fla = z_prob.reshape((self.batch_size  * args['chargenum']* self.seqlen, 2))
         sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, args['chargenum'], self.seqlen,  2))
                                                                 # batch chargenum seq 2 //0-1
-        sampled_seq = sampled_seq * mask.unsqueeze(2).unsqueeze(3)
+        sampled_seq = sampled_seq * mask.unsqueeze(1).unsqueeze(3)
 
         # print(sampled_seq)
 
