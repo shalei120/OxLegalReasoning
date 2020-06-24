@@ -126,7 +126,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-
+        # accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 
@@ -192,7 +192,7 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
 
                 output_probs, output_labels = self.model.predict(x)
-                if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmcapib':
+                if  args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmibcp' :
                     output_labels, sampled_words, wordsamplerate = output_labels
                     if not pppt:
                         pppt = True
@@ -200,6 +200,15 @@ class Runner:
                             if choice[1] == 1:
                                 print(self.textData.index2word[w], end='')
                         print('sample rate: ', wordsamplerate[0])
+                elif args['model_arch'] == 'lstmcapib':
+                    output_labels, sampled_words, wordsamplerate = output_labels
+                    if not pppt:
+                        pppt = True
+                        for w, choice in zip(batch.encoderSeqs[0], sampled_words[0,output_labels[0],:]):
+                            if choice == 1:
+                                print(self.textData.index2word[w], end='')
+                        print('sample rate: ', wordsamplerate[0])
+
                 batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
                 right += sum(batch_correct)
                 total += x['enc_input'].size()[0]

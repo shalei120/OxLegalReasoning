@@ -182,6 +182,7 @@ class LSTM_capsule_IB_Model(nn.Module):
         # print(en_outputs.size())
 
         z_prob = torch.einsum('chy,bsh->bcsy', self.x_2_prob_z_weight, en_outputs)# batch chargenum seq 2
+        z_prob = self.softmax(z_prob)
 
         z_prob_fla = z_prob.reshape((self.batch_size  * args['chargenum']* self.seqlen, 2))
         sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((self.batch_size, args['chargenum'], self.seqlen,  2))
@@ -208,7 +209,7 @@ class LSTM_capsule_IB_Model(nn.Module):
 
         z2 = self.sample_z(z2_mean, z2_logvar) # batch chargenum hid
 
-        print('z2',torch.sum(z2))
+        # print('z2',torch.sum(z2))
 
 
         I_x_z = torch.mean(-torch.log(z_prob[:,:,:,0]+ eps))
@@ -221,7 +222,7 @@ class LSTM_capsule_IB_Model(nn.Module):
 
 
         capsule_v_norm = self.ChargeClassifier(z2).squeeze()    # b chargenum
-        print('capsule_v_norm: ', capsule_v_norm)
+        # print('capsule_v_norm: ', capsule_v_norm)
 
         m_plus = 0.9
         m_minus = 0.1
@@ -235,7 +236,7 @@ class LSTM_capsule_IB_Model(nn.Module):
         # print('cap_pos: ', cap_pos.size(), cap_neg.size(), answer.size())
         capsule_loss = answer.float() * cap_pos + lambda_c * (1-answer.float()) * cap_neg
         capsule_loss  = torch.mean(torch.sum(capsule_loss,dim = 1))
-
+        # print('caploss: ',capsule_loss)
 
 
         # xz_mock,_ = torch.max(capsule_b ,dim =2 ) # b s
@@ -275,15 +276,15 @@ class LSTM_capsule_IB_Model(nn.Module):
         en_outputs, en_state = self.encoder(encoderInputs, encoder_lengths)
 
         z_prob = torch.einsum('chy,bsh->bcsy', self.x_2_prob_z_weight, en_outputs)  # batch chargenum seq 2
-
+        z_prob = self.softmax(z_prob)
         z_prob_fla = z_prob.reshape((batch_size * args['chargenum'] * seqlen, 2))
         sampled_seq = self.gumbel_softmax(z_prob_fla).reshape((batch_size, args['chargenum'], seqlen, 2))
         # batch chargenum seq 2 //0-1
-        sampled_seq = sampled_seq * mask.unsqueeze(2).unsqueeze(3)
+        sampled_seq = sampled_seq * mask.unsqueeze(1).unsqueeze(3)
 
         # print(sampled_seq)
 
-        sampled_num = torch.sum(sampled_seq[:, :, :, 1], dim=1)  # batch chargenum
+        sampled_num = torch.sum(sampled_seq[:, :, :, 1], dim=2)  # batch chargenum
         sampled_num = (sampled_num == 0).to(args['device'], dtype=torch.float32) + sampled_num
         sampled_word = en_outputs.unsqueeze(1) * (sampled_seq[:, :, :, 1].unsqueeze(3))
 
@@ -304,8 +305,8 @@ class LSTM_capsule_IB_Model(nn.Module):
         '''
         Capsule
         '''
-        capsule_v_norm = self.ChargeClassifier(z2)   # b chargenum
+        capsule_v_norm = self.ChargeClassifier(z2)[:,:,0]  # b chargenum
 
         wordnum = torch.sum(mask, dim = 1, keepdim=True)
 
-        return capsule_v_norm,  (torch.argmax(capsule_v_norm, dim = -1), sampled_seq, sampled_num/wordnum)
+        return capsule_v_norm,  (torch.argmax(capsule_v_norm, dim = -1), sampled_seq[:, :, :, 1], sampled_num/wordnum)
