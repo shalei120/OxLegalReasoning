@@ -28,6 +28,7 @@ import LSTM_IB_GAN
 from LSTM_IB_complete import LSTM_IB_CP_Model
 from Transformer import TransformerModel
 from LSTM_capIB import LSTM_capsule_IB_Model
+from LSTM_iterIB import LSTM_iterIB_Model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
@@ -101,6 +102,10 @@ class Runner:
             print('Using LSTM capsule information bottleneck model.')
             self.model = LSTM_capsule_IB_Model(self.textData.word2index, self.textData.index2word)
             self.train()
+        elif args['model_arch'] == 'lstmiterib':
+            print('Using LSTM iteratively information bottleneck model.')
+            self.model = LSTM_iterIB_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
 
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
@@ -132,6 +137,9 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
+                if not args['model_arch'] == 'lstmiterib':
+                    x['labels'] = x['labels'][:,0]
+
                 loss = self.model(x)  # batch seq_len outsize
 
                 loss.backward(retain_graph=True)
@@ -157,14 +165,24 @@ class Runner:
                     plot_loss_total = 0
 
                 iter += 1
+            if args['model_arch'] == 'lstmiterib':
+                accuracy, EM, p,r,acc = self.test('test', max_accu)
+                if accuracy > max_accu or max_accu == -1:
+                    print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
+                    torch.save(self.model, self.model_path)
+                    max_accu = accuracy
 
-            accuracy = self.test('test', max_accu)
-            if accuracy > max_accu or max_accu == -1:
-                print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
-                torch.save(self.model, self.model_path)
-                max_accu = accuracy
+                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy,EM, p,r,acc,
+                      'max accuracy=', max_accu)
 
-            print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
+            else:
+                accuracy = self.test('test', max_accu)
+                if accuracy > max_accu or max_accu == -1:
+                    print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
+                    torch.save(self.model, self.model_path)
+                    max_accu = accuracy
+
+                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
 
         # self.test()
         # showPlot(plot_losses)
@@ -179,6 +197,11 @@ class Runner:
 
         dset = []
 
+        exact_match = 0
+        p = 0.0
+        r = 0.0
+        acc = 0.0
+
         with torch.no_grad():
             pppt = False
             for batch in self.textData.getBatches(datasetname):
@@ -186,22 +209,43 @@ class Runner:
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
                 x['enc_len'] = batch.encoder_lens
 
-                output_probs, output_labels = self.model.predict(x)
-                if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmcapib':
-                    output_labels, sampled_words, wordsamplerate = output_labels
-                    if not pppt:
-                        pppt = True
-                        for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
-                            if choice[1] == 1:
-                                print(self.textData.index2word[w], end='')
-                        print('sample rate: ', wordsamplerate[0])
-                batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
-                right += sum(batch_correct)
-                total += x['enc_input'].size()[0]
+                if args['model_arch'] == 'lstmiterib':
+                    answerlist = self.model.predict(x)
+                    for anses, gold in zip(answerlist, batch.label):
+                        if anses[0] == gold[0]:
+                            right+=1
+                        goldlist = list(gold[:gold.index(args['chargenum'])])
+                        intersect = joint = set(anses)
+                        intersect.intersection(set(goldlist))
+                        joint.update(set(goldlist))
+                        intersect_size=len(intersect)
+                        joint_size= len(joint)
+                        if intersect_size == joint_size:
+                            exact_match += 1
 
-                for ind, c in enumerate(batch_correct):
-                    if not c:
-                        dset.append((batch.encoderSeqs[ind], batch.label[ind], output_labels[ind]))
+                        acc = (acc * total + intersect_size / joint_size) / (total+1)
+                        p = (p * total + intersect_size / len(anses)) / (total+1)
+                        r = (r * total + intersect_size / len(goldlist)) / (total+1)
+
+                        total+=1
+
+                else:
+                    output_probs, output_labels = self.model.predict(x)
+                    if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmcapib':
+                        output_labels, sampled_words, wordsamplerate = output_labels
+                        if not pppt:
+                            pppt = True
+                            for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
+                                if choice[1] == 1:
+                                    print(self.textData.index2word[w], end='')
+                            print('sample rate: ', wordsamplerate[0])
+                    batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
+                    right += sum(batch_correct)
+                    total += x['enc_input'].size()[0]
+
+                    for ind, c in enumerate(batch_correct):
+                        if not c:
+                            dset.append((batch.encoderSeqs[ind], batch.label[ind], output_labels[ind]))
 
         accuracy = right / total
 
@@ -215,8 +259,10 @@ class Runner:
                     wh.write(self.textData.lawinfo['i2c'][int(d[2])])
                     wh.write('\n')
             wh.close()
-
-        return accuracy
+        if args['model_arch'] == 'lstmiterib':
+            return accuracy, exact_match/total, p,r,acc
+        else:
+            return accuracy
 
     def indexesFromSentence(self,  sentence):
         return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['UNK'] for word in sentence]

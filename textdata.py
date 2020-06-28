@@ -91,13 +91,16 @@ class TextData:
 
             batch.encoderSeqs.append(sen_ids)
             batch.encoder_lens.append(len(batch.encoderSeqs[i]))
-            batch.label.append(charge_list[0])
+            batch.label.append(charge_list)
 
         maxlen_enc = max(batch.encoder_lens)
-
+        maxlen_charge = max([len(c) for c in batch.label]) + 1
+        # args['chargenum']      eos
+        # args['chargenum'] + 1  padding
 
         for i in range(batchSize):
             batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['PAD']] * (maxlen_enc - len(batch.encoderSeqs[i]))
+            batch.label[i] = batch.label[i] + [args['chargenum']] + [args['chargenum']+1] * (maxlen_charge -1 - len(batch.label[i]))
 
         return batch
 
