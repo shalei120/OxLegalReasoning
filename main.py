@@ -28,6 +28,7 @@ import LSTM_IB_GAN
 from LSTM_IB_complete import LSTM_IB_CP_Model
 from Transformer import TransformerModel
 from LSTM_capIB import LSTM_capsule_IB_Model
+from LSTM_cap import LSTM_capsule_Model
 from LSTM_iterIB import LSTM_iterIB_Model
 
 parser = argparse.ArgumentParser()
@@ -106,6 +107,10 @@ class Runner:
             print('Using LSTM iteratively information bottleneck model.')
             self.model = LSTM_iterIB_Model(self.textData.word2index, self.textData.index2word)
             self.train()
+        elif args['model_arch'] == 'lstmcap':
+            print('Using LSTM capsule model.')
+            self.model = LSTM_capsule_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
 
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
@@ -126,7 +131,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-
+        # accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 
@@ -231,7 +236,7 @@ class Runner:
 
                 else:
                     output_probs, output_labels = self.model.predict(x)
-                    if args['model_arch'] == 'lstmibcp' or args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmcapib':
+                    if  args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmibcp' :
                         output_labels, sampled_words, wordsamplerate = output_labels
                         if not pppt:
                             pppt = True
@@ -239,6 +244,16 @@ class Runner:
                                 if choice[1] == 1:
                                     print(self.textData.index2word[w], end='')
                             print('sample rate: ', wordsamplerate[0])
+                    elif args['model_arch'] == 'lstmcapib':
+                        output_labels, sampled_words, wordsamplerate = output_labels
+                        if not pppt:
+                            pppt = True
+                            for w, choice in zip(batch.encoderSeqs[0], sampled_words[0,output_labels[0],:]):
+                                if choice == 1:
+                                    print(self.textData.index2word[w], end='')
+                            print('sample rate: ', wordsamplerate[0])
+                            
+                            
                     batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
                     right += sum(batch_correct)
                     total += x['enc_input'].size()[0]

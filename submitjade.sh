@@ -1,13 +1,11 @@
-#!/bin/bash
-#SBATCH --nodes=1
-#SBATCH --partition=small
-#SBATCH --job-name=LegalReasoning
-#SBATCH --gres=gpu:1
 
-module load cuda/9.2
-
-#echo $CUDA_VISIBLE_DEVICES
-#nvidia-smi
-
-# run the application
-python3 main.py -m transformer
+while getopts "m:" arg
+do
+	case $arg in
+		m)  echo "m : $OPTARG"
+      sbatch ./submitjade/$OPTARG.sh
+      ;;
+    ?)
+			echo "unknown argument"
+	esac
+done
