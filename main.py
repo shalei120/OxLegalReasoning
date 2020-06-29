@@ -217,21 +217,27 @@ class Runner:
                 if args['model_arch'] == 'lstmiterib':
                     answerlist = self.model.predict(x)
                     for anses, gold in zip(answerlist, batch.label):
+                        anses = [int(ele) for ele in anses]
                         if anses[0] == gold[0]:
                             right+=1
                         goldlist = list(gold[:gold.index(args['chargenum'])])
-                        intersect = joint = set(anses)
-                        intersect.intersection(set(goldlist))
+                        intersect = set(anses)
+                        joint = set(anses)
+                        intersect = intersect.intersection(set(goldlist))
                         joint.update(set(goldlist))
                         intersect_size=len(intersect)
                         joint_size= len(joint)
                         if intersect_size == joint_size:
                             exact_match += 1
 
+                        # print(intersect,joint, anses, goldlist)
+
                         acc = (acc * total + intersect_size / joint_size) / (total+1)
                         p = (p * total + intersect_size / len(anses)) / (total+1)
                         r = (r * total + intersect_size / len(goldlist)) / (total+1)
 
+                        # print(acc, p,r)
+                        # exit()
                         total+=1
 
                 else:
