@@ -48,18 +48,20 @@ class LSTM_iterIB_Model(nn.Module):
 
         self.z_init2nero_mu = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
         self.z_init2nero_logvar = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_sym_to_qz_mu= nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_sym_to_qz_logvar = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
         self.x_2_prob_z = nn.Sequential(
             nn.Linear(args['hiddenSize'], 2)
           ).to(args['device'])
-        self.z_to_fea = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device']),
-            nn.Tanh()
-          ).to(args['device'])
+        # self.z_to_fea = nn.Sequential(
+        #     nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device']),
+        #     nn.Tanh()
+        #   ).to(args['device'])
 
 
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']+1),   # add EOS charge
+            nn.Linear(args['hiddenSize'], args['chargenum']+2),   # add EOS charge
             nn.LogSoftmax(dim=-1)
           ).to(args['device'])
 
@@ -142,9 +144,12 @@ class LSTM_iterIB_Model(nn.Module):
             ''' z_sym -> z_nero'''
             z_sym_mean = torch.sum(z_sym, dim = 1)/ sampled_num.unsqueeze(1)# batch hid
             qz_mu = self.z_sym_to_qz_mu(z_sym_mean)
-            qz_logvar = self.z_sym_to_qz_logvar(z_sym)
+            qz_logvar = self.z_sym_to_qz_logvar(z_sym_mean)
             z2_sampled = self.sample_z(z_nero_mu, z_nero_logvar)
-            I_z1_z2 = -0.5* (z2_sampled - qz_mu)**2/(torch.exp(qz_logvar)) -0.5*qz_logvar
+
+            # print(z2_sampled.size(), qz_mu.size(), qz_logvar.size())
+            I_z1_z2 = -0.5* (z2_sampled - qz_mu)**2/(torch.exp(qz_logvar)) -0.5*qz_logvar # batch hid
+            I_z1_z2 = torch.mean(I_z1_z2)
 
             z2_sampled_for_cla = self.sample_z(z_nero_mu, z_nero_logvar)
 
@@ -157,7 +162,7 @@ class LSTM_iterIB_Model(nn.Module):
 
             loss = loss + recon_loss_mean + 0.01* I_x_z_sym - I_z1_z2 +I_x_z_nero
 
-            mask = mask * sampled_seq[:,:,1]
+            # mask = mask * sampled_seq[:,:,1]
 
 
         return loss
@@ -208,12 +213,12 @@ class LSTM_iterIB_Model(nn.Module):
             output = self.ChargeClassifier(z2_sampled_for_cla).to(args['device'])  # batch chargenum
             ans = torch.argmax(output, dim = 1)
             answer.append(ans)
-            mask = mask * sampled_seq[:,:,1]
+            # mask = mask * sampled_seq[:,:,1]
 
-        answer = torch.Tensor(answer)
+        answer = torch.stack(answer)
         finalanswer = []
         for b in range(batch_size):
-            decode_id_list = list(answer[b,:])
+            decode_id_list = list(answer[:,b])
             if self.EOS_charge_index in decode_id_list:
                 decode_id_list = decode_id_list[:decode_id_list.index(self.EOS_charge_index)] \
                     if decode_id_list[0] != self.EOS_charge_index else \

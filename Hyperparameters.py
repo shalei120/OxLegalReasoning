@@ -27,7 +27,7 @@ class HP:
 
         args['numEpochs'] = 10
         args['saveEvery'] = 2000
-        args['batchSize'] = 16
+        args['batchSize'] = 64
         args['learningRate'] = 0.001
         args['dropout'] = 0.9
         args['clip'] = 5.0
