@@ -45,6 +45,7 @@ class LSTM_grid_Model(nn.Module):
 
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
+        self.sigmoid = nn.Sigmoid()
         self.charge_embs = Parameter(torch.rand(args['chargenum'],args['hiddenSize'])).to(args['device'])
 
         self.classify2 = nn.Sequential(
@@ -90,12 +91,15 @@ class LSTM_grid_Model(nn.Module):
         y = y[:,:,:args['chargenum']]
         y = torch.sum(y,dim = 1)  # b chargenum
 
-        recon_loss = yesno[:,:,1] * y + yesno[:,:,0] *(1-y)
+        recon_loss = yesno[:,:,1] * y.float() + yesno[:,:,0] *(1-y.float())
+        recon_loss_mean = torch.mean(torch.sum(-recon_loss, dim = 1)).to(args['device'])
 
+        maxpool,_ = torch.max(en_output, dim = 1) # batch h
 
-        recon_loss_mean = torch.mean(recon_loss).to(args['device'])
-
-        return recon_loss_mean
+        pred = self.sigmoid(maxpool @ self.charge_embs.transpose(0,1)).to(args['device']) #batch c
+        loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
+        loss = -torch.mean(torch.sum(loss, dim = 1))
+        return recon_loss_mean + loss
 
     def predict(self, x):
         encoderInputs = x['enc_input']
@@ -120,6 +124,8 @@ class LSTM_grid_Model(nn.Module):
             for ind, choose in enumerate(pred[b,:]):
                 if choose == 1:
                     decode_id_list.append(ind)
+            if len(decode_id_list) == 0:
+                decode_id_list.append(torch.argmax(yesno[b,:,1]))
             finalanswer.append(decode_id_list)
 
 
