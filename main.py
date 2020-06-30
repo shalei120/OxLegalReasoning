@@ -147,7 +147,7 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
-                if not args['model_arch'] == 'lstmiterib':
+                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid']:
                     x['labels'] = x['labels'][:,0]
 
                 loss = self.model(x)  # batch seq_len outsize
@@ -219,7 +219,7 @@ class Runner:
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
                 x['enc_len'] = batch.encoder_lens
 
-                if args['model_arch'] == 'lstmiterib':
+                if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
                     answerlist = self.model.predict(x)
                     for anses, gold in zip(answerlist, batch.label):
                         anses = [int(ele) for ele in anses]
@@ -285,7 +285,7 @@ class Runner:
                     wh.write(self.textData.lawinfo['i2c'][int(d[2])])
                     wh.write('\n')
             wh.close()
-        if args['model_arch'] == 'lstmiterib':
+        if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
             return accuracy, exact_match/total, p,r,acc
         else:
             return accuracy
