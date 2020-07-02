@@ -31,6 +31,7 @@ from LSTM_capIB import LSTM_capsule_IB_Model
 from LSTM_cap import LSTM_capsule_Model
 from LSTM_iterIB import LSTM_iterIB_Model
 from LSTM_grid import LSTM_grid_Model
+from LSTM_GMIB import LSTM_GMIB_Model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
@@ -115,6 +116,10 @@ class Runner:
         elif args['model_arch'] == 'lstmgrid':
             print('Using LSTM grid model.')
             self.model = LSTM_grid_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
+        elif args['model_arch'] == 'lstmgmib':
+            print('Using LSTM Gaussian Mixture IB model.')
+            self.model = LSTM_GMIB_Model(self.textData.word2index, self.textData.index2word)
             self.train()
 
 
