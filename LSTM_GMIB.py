@@ -45,6 +45,7 @@ class LSTM_GMIB_Model(nn.Module):
 
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
+        self.sigmoid = nn.Sigmoid()
 
         self.x_2_prob_z = nn.Sequential(
             nn.Linear(args['hiddenSize'], 2)
@@ -143,8 +144,10 @@ class LSTM_GMIB_Model(nn.Module):
 
         words_z = self.sample_z(words_mu, words_logvar)  # batch seq hid
 
-        logit_P_c_w = torch.mean(-0.5*(word_z.unsqueeze(2) - self.charge_dist_mu.unsqueeze(0).unsqueeze(1))**2 / self.charge_dist_logvar.unsqueeze(0).unsqueeze(1)\
-                    -0.5*torch.log(2*3.14) - 0.5 * self.charge_dist_logvar.unsqueeze(0).unsqueeze(1), dim = -1)  # batch seq charge
+        logit_P_c_w = -0.5*((words_z ** 2)@ torch.exp(-self.charge_dist_logvar).transpose(0,1)
+                                       -2*words_z @ (self.charge_dist_mu/torch.exp(self.charge_dist_logvar)).transpose(0,1)
+                                       + torch.sum(self.charge_dist_mu**2/torch.exp(self.charge_dist_logvar), dim = 1).unsqueeze(0).unsqueeze(1) )\
+                     - torch.sum(0.5 * self.charge_dist_logvar, dim = -1).unsqueeze(0).unsqueeze(1)  # batch seq charge
 
         words_c = self.gumbel_softmax(logit_P_c_w)  # batch seq charge
 
@@ -157,13 +160,13 @@ class LSTM_GMIB_Model(nn.Module):
 
         w_prime = self.dec_P_x_z(words_z) # b s e
         P_recon = self.softmax(w_prime @ self.embedding.weight.transpose(0,1)) # b s v
-        recon_loss = self.CEloss(P_recon, self.encoderInputs) * mask
+        recon_loss = self.CEloss(P_recon.transpose(1,2), self.encoderInputs) * mask
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
         y = F.one_hot(self.classifyLabels, num_classes=args['chargenum'] + 2)
         y = y[:, :, :(args['chargenum']+1)]  # add content class
         y = torch.sum(y, dim=1)  # b chargenum
-        P_c = (y + 0.00001) / torch.sum(y + 0.00001, dim = 1, keepdim=True)
+        P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
         P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim = -1, keepdim=True) # batch seq charge
         KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim = 2)
         KL_c = torch.mean(KL_c)
@@ -210,10 +213,11 @@ class LSTM_GMIB_Model(nn.Module):
 
         words_z = self.sample_z(words_mu, words_logvar)  # batch seq hid
 
-        logit_P_c_w = torch.mean(-0.5 * (word_z.unsqueeze(2) - self.charge_dist_mu.unsqueeze(0).unsqueeze(
-            1)) ** 2 / self.charge_dist_logvar.unsqueeze(0).unsqueeze(1) \
-                                 - 0.5 * torch.log(2 * 3.14) - 0.5 * self.charge_dist_logvar.unsqueeze(0).unsqueeze(1),
-                                 dim=-1)  # batch seq charge
+
+        logit_P_c_w = -0.5*((words_z ** 2)@ torch.exp(-self.charge_dist_logvar).transpose(0,1)
+                                       -2*words_z @ (self.charge_dist_mu/torch.exp(self.charge_dist_logvar)).transpose(0,1)
+                                       + torch.sum(self.charge_dist_mu**2/torch.exp(self.charge_dist_logvar), dim = 1).unsqueeze(0).unsqueeze(1) )\
+                     - torch.sum(0.5 * self.charge_dist_logvar, dim = -1).unsqueeze(0).unsqueeze(1)  # batch seq charge
 
         words_c = self.gumbel_softmax(logit_P_c_w)  # batch seq charge
 
@@ -233,7 +237,7 @@ class LSTM_GMIB_Model(nn.Module):
         y = F.one_hot(self.classifyLabels, num_classes=args['chargenum'] + 2)
         y = y[:, :, :(args['chargenum'] + 1)]  # add content class
         y = torch.sum(y, dim=1)  # b chargenum
-        P_c = (y + 0.00001) / torch.sum(y + 0.00001, dim=1, keepdim=True)
+        P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
         P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim=-1, keepdim=True)  # batch seq charge
         # KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim=2)
         # KL_c = torch.mean(KL_c)

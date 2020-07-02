@@ -180,12 +180,9 @@ class Runner:
                     plot_loss_total = 0
 
                 iter += 1
-<<<<<<< HEAD
-            if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
-=======
-                
+
             if args['model_arch'] in ['lstmiterib', 'lstmgrid','lstmgmib']:
->>>>>>> 16cd5e56bdc148ac0ca5102d986467a97e674e5f
+
                 accuracy, EM, p,r,acc = self.test('test', max_accu)
                 if accuracy > max_accu or max_accu == -1:
                     print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')

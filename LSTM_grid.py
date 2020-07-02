@@ -94,13 +94,13 @@ class LSTM_grid_Model(nn.Module):
         recon_loss = yesno[:,:,1] * y.float() + yesno[:,:,0] *(1-y.float())
         recon_loss_mean = torch.mean(torch.sum(-recon_loss, dim = 1)).to(args['device'])
 
-        # maxpool,_ = torch.max(en_output, dim = 1) # batch h
-        #
-        # pred = self.sigmoid(maxpool @ self.charge_embs.transpose(0,1)).to(args['device']) #batch c
-        # loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
-        # loss = -torch.mean(torch.sum(loss, dim = 1))
-        # return recon_loss_mean + loss
-        return recon_loss_mean
+        maxpool,_ = torch.max(en_output, dim = 1) # batch h
+
+        pred = self.sigmoid(maxpool @ self.charge_embs.transpose(0,1)).to(args['device']) #batch c
+        loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
+        loss = -torch.mean(torch.sum(loss, dim = 1))
+        return recon_loss_mean + loss
+        # return recon_loss_mean
 
     def predict(self, x):
         encoderInputs = x['enc_input']
