@@ -47,15 +47,15 @@ class LSTM_GMIB_Model(nn.Module):
         self.softmax = nn.Softmax(dim = -1)
         self.sigmoid = nn.Sigmoid()
 
-        self.x_2_prob_z = nn.Sequential(
-            nn.Linear(args['hiddenSize'], 2)
-          ).to(args['device'])
+        # self.x_2_prob_z = nn.Sequential(
+        #     nn.Linear(args['hiddenSize'], 2)
+        #   ).to(args['device'])
         self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
-        self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']),
-            nn.LogSoftmax(dim=-1)
-          ).to(args['device'])
+        # self.ChargeClassifier = nn.Sequential(
+        #     nn.Linear(args['hiddenSize'], args['chargenum']),
+        #     nn.LogSoftmax(dim=-1)
+        #   ).to(args['device'])
 
         self.charge_dist_mu = Parameter(torch.rand(args['chargenum'] + 1, args['hiddenSize'])).to(args['device'])
         self.charge_dist_logvar = Parameter(torch.rand(args['chargenum'] + 1, args['hiddenSize'])).to(args['device'])
@@ -193,7 +193,7 @@ class LSTM_GMIB_Model(nn.Module):
         # print(sampled_num / wordnum)
         # exit()
 
-        return loss
+        return loss, (cla_loss_mean, recon_loss_mean, KL_c, KL_cz_z, KL_origin, I_x_z)
 
     def predict(self, x):
         encoderInputs = x['enc_input'].to(args['device'])

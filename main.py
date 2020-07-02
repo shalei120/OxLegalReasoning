@@ -155,10 +155,12 @@ class Runner:
                 if  args['model_arch'] not in ['lstmiterib', 'lstmgrid','lstmgmib']:
                     x['labels'] = x['labels'][:,0]
 
-                loss = self.model(x)  # batch seq_len outsize
+                if args['model_arch'] in ['lstmgmib']:
+                    loss, littleloss = self.model(x)  # batch seq_len outsize
+                else:
+                    loss = self.model(x)  # batch seq_len outsize
 
-                loss.backward(retain_graph=True)
-
+                loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), args['clip'])
 
                 optimizer.step()
@@ -171,8 +173,15 @@ class Runner:
                 if iter % print_every == 0:
                     print_loss_avg = print_loss_total / print_every
                     print_loss_total = 0
-                    print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
-                                                 iter, iter / n_iters * 100, print_loss_avg))
+
+                    if args['model_arch'] in ['lstmgmib']:
+                        print('%s (%d %d%%) %.4f ' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
+                                                 iter, iter / n_iters * 100, print_loss_avg), end='')
+                        print(littleloss)
+                    else:
+                        print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
+                                                     iter, iter / n_iters * 100, print_loss_avg))
+
 
                 if iter % plot_every == 0:
                     plot_loss_avg = plot_loss_total / plot_every
