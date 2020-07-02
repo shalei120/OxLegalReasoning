@@ -152,7 +152,7 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
-                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid']:
+                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid','lstmgmib']:
                     x['labels'] = x['labels'][:,0]
 
                 loss = self.model(x)  # batch seq_len outsize
@@ -180,7 +180,7 @@ class Runner:
                     plot_loss_total = 0
 
                 iter += 1
-            if args['model_arch'] == 'lstmiterib':
+            if args['model_arch'] in ['lstmiterib', 'lstmgrid','lstmgmib']:
                 accuracy, EM, p,r,acc = self.test('test', max_accu)
                 if accuracy > max_accu or max_accu == -1:
                     print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
@@ -224,7 +224,7 @@ class Runner:
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
                 x['enc_len'] = batch.encoder_lens
 
-                if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
+                if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
                     answerlist = self.model.predict(x)
                     for anses, gold in zip(answerlist, batch.label):
                         anses = [int(ele) for ele in anses]
@@ -290,7 +290,7 @@ class Runner:
                     wh.write(self.textData.lawinfo['i2c'][int(d[2])])
                     wh.write('\n')
             wh.close()
-        if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
+        if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
             return accuracy, exact_match/total, p,r,acc
         else:
             return accuracy
