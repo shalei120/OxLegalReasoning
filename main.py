@@ -31,6 +31,7 @@ from LSTM_capIB import LSTM_capsule_IB_Model
 from LSTM_cap import LSTM_capsule_Model
 from LSTM_iterIB import LSTM_iterIB_Model
 from LSTM_grid import LSTM_grid_Model
+from LSTM_GMIB import LSTM_GMIB_Model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
@@ -116,6 +117,10 @@ class Runner:
             print('Using LSTM grid model.')
             self.model = LSTM_grid_Model(self.textData.word2index, self.textData.index2word)
             self.train()
+        elif args['model_arch'] == 'lstmgmib':
+            print('Using LSTM Gaussian Mixture IB model.')
+            self.model = LSTM_GMIB_Model(self.textData.word2index, self.textData.index2word)
+            self.train()
 
 
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
@@ -147,7 +152,7 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
-                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid']:
+                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid','lstmgmib']:
                     x['labels'] = x['labels'][:,0]
 
                 loss = self.model(x)  # batch seq_len outsize
@@ -175,7 +180,12 @@ class Runner:
                     plot_loss_total = 0
 
                 iter += 1
+<<<<<<< HEAD
             if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
+=======
+                
+            if args['model_arch'] in ['lstmiterib', 'lstmgrid','lstmgmib']:
+>>>>>>> 16cd5e56bdc148ac0ca5102d986467a97e674e5f
                 accuracy, EM, p,r,acc = self.test('test', max_accu)
                 if accuracy > max_accu or max_accu == -1:
                     print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
@@ -219,7 +229,7 @@ class Runner:
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
                 x['enc_len'] = batch.encoder_lens
 
-                if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
+                if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
                     answerlist = self.model.predict(x)
                     for anses, gold in zip(answerlist, batch.label):
                         anses = [int(ele) for ele in anses]
@@ -285,7 +295,7 @@ class Runner:
                     wh.write(self.textData.lawinfo['i2c'][int(d[2])])
                     wh.write('\n')
             wh.close()
-        if args['model_arch'] in ['lstmiterib', 'lstmgrid']:
+        if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
             return accuracy, exact_match/total, p,r,acc
         else:
             return accuracy
