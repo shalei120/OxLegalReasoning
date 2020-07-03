@@ -234,10 +234,10 @@ class LSTM_GMIB_Model(nn.Module):
         # recon_loss = self.CEloss(P_recon, self.encoderInputs) * mask
         # recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
-        y = F.one_hot(self.classifyLabels, num_classes=args['chargenum'] + 2)
-        y = y[:, :, :(args['chargenum'] + 1)]  # add content class
-        y = torch.sum(y, dim=1)  # b chargenum
-        P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
+        # y = F.one_hot(self.classifyLabels, num_classes=args['chargenum'] + 2)
+        # y = y[:, :, :(args['chargenum'] + 1)]  # add content class
+        # y = torch.sum(y, dim=1)  # b chargenum
+        # P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
         P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim=-1, keepdim=True)  # batch seq charge
         # KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim=2)
         # KL_c = torch.mean(KL_c)
@@ -258,7 +258,7 @@ class LSTM_GMIB_Model(nn.Module):
         # cla_loss = y.float() * torch.log(pred_p) + (1 - y.float()) * torch.log(1 - pred_p)
         # cla_loss_mean = -torch.mean(torch.sum(cla_loss, dim=1))
 
-        choose_res = torch.argmax(pred_p, dim = -1)
+        choose_res = (pred_p > 0.5).long()
         wordnum = torch.sum(mask, dim = 1)
 
         finalanswer = []
@@ -269,7 +269,7 @@ class LSTM_GMIB_Model(nn.Module):
                 if choose == 1:
                     decode_id_list.append(ind)
             if len(decode_id_list) == 0:
-                decode_id_list.append(torch.argmax(pred_p[b, :, 1]))
+                decode_id_list.append(torch.argmax(pred_p[b, :]))
             finalanswer.append(decode_id_list)
 
         return finalanswer
