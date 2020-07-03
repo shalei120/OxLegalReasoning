@@ -193,7 +193,7 @@ class LSTM_GMIB_Model(nn.Module):
         # print(sampled_num / wordnum)
         # exit()
 
-        return loss, (cla_loss_mean, recon_loss_mean, KL_c, KL_cz_z, KL_origin, I_x_z)
+        return loss, (float(cla_loss_mean), float(recon_loss_mean), float(KL_c), float(KL_cz_z),float(KL_origin), float(I_x_z))
 
     def predict(self, x):
         encoderInputs = x['enc_input'].to(args['device'])
