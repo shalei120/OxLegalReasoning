@@ -141,7 +141,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-        # accuracy = self.test('test', max_accu)
+        accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 
