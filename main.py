@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import  tqdm
-import time
+import time, datetime
 import math,random
 import nltk
 import pickle
@@ -64,7 +64,7 @@ def timeSince(since, percent):
     s = now - since
     es = s / (percent)
     rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
+    return '%s (%s)' % (asMinutes(s), datetime.datetime.now())
 
 class Runner:
     def __init__(self):
@@ -120,6 +120,7 @@ class Runner:
         elif args['model_arch'] == 'lstmgmib':
             print('Using LSTM Gaussian Mixture IB model.')
             self.model = LSTM_GMIB_Model(self.textData.word2index, self.textData.index2word)
+            self.model = self.model.to(args['device'])
             self.train()
 
 
@@ -141,7 +142,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-        accuracy = self.test('test', max_accu)
+        # accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 

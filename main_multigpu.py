@@ -153,7 +153,7 @@ class Runner:
                 optimizer.zero_grad()
                 x = {}
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-                x['enc_len'] = batch.encoder_lens
+                x['enc_len'] = autograd.Variable(torch.LongTensor(batch.encoder_lens)).to(args['device'])
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
                 if  args['model_arch'] not in ['lstmiterib', 'lstmgrid','lstmgmib']:
