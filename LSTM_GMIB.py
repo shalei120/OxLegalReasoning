@@ -61,11 +61,11 @@ class LSTM_GMIB_Model(nn.Module):
         self.charge_dist_logvar = Parameter(torch.rand(args['chargenum'] + 1, args['hiddenSize']))
 
         self.P_z_w_mu = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['hiddenSize']),
+            nn.Linear(args['embeddingSize'], args['hiddenSize']),
             nn.Tanh()
           )
         self.P_z_w_logvar = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['hiddenSize']),
+            nn.Linear(args['embeddingSize'], args['hiddenSize']),
             nn.Tanh()
         )
 
@@ -118,6 +118,7 @@ class LSTM_GMIB_Model(nn.Module):
         self.seqlen = self.encoderInputs.size()[1]
 
         mask = torch.sign(self.encoderInputs).float()
+        enc_input_embeddings = self.embedding(self.encoderInputs)
 
         en_outputs, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)  # batch seq hid
 
@@ -139,8 +140,9 @@ class LSTM_GMIB_Model(nn.Module):
         s_w_feature = self.z_to_fea(en_outputs)
         s_w_feature,_ = torch.max(s_w_feature, dim = 1)# batch hid
 
-        words_mu = self.P_z_w_mu(en_outputs)    # batch seq hid # 1
-        words_logvar = self.P_z_w_logvar(en_outputs)
+        # GM
+        words_mu = self.P_z_w_mu(enc_input_embeddings)    # batch seq hid # 1
+        words_logvar = self.P_z_w_logvar(enc_input_embeddings)
 
         words_z = self.sample_z(words_mu, words_logvar)  # batch seq hid
 
@@ -159,13 +161,14 @@ class LSTM_GMIB_Model(nn.Module):
         KL_cz_z = torch.mean(KL_cz_z)
 
         w_prime = self.dec_P_x_z(words_z) # b s e
-        P_recon = self.softmax(w_prime @ self.embedding.weight.transpose(0,1)) # b s v
+        P_recon = w_prime @ self.embedding.weight.transpose(0,1) # b s v
         recon_loss = self.CEloss(P_recon.transpose(1,2), self.encoderInputs) * mask
         recon_loss_mean = torch.mean(recon_loss)
 
         y = F.one_hot(self.classifyLabels, num_classes=args['chargenum'] + 2)
         y = y[:, :, :(args['chargenum']+1)]  # add content class
-        y = torch.sum(y, dim=1)  # b chargenum
+        y, _ = torch.max(y, dim=1)  # b chargenum+1
+
         P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
         P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim = -1, keepdim=True) # batch seq charge
         KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim = 2)
@@ -173,7 +176,7 @@ class LSTM_GMIB_Model(nn.Module):
 
         KL_origin = torch.mean(0.5 * (torch.exp(self.charge_dist_logvar) + self.charge_dist_mu ** 2  - 1 - self.charge_dist_logvar))
 
-        sum_P_c_w = torch.sum(P_c_w, dim = 1) # batch charge
+        sum_P_c_w = torch.sum(P_c_w, dim = 1)[:,:args['chargenum']] # batch charge
         P_stat = sum_P_c_w / torch.sum(sum_P_c_w, dim = 1, keepdim=True)
 
 
@@ -182,9 +185,9 @@ class LSTM_GMIB_Model(nn.Module):
         # en_hidden, en_cell = en_state   #2 batch hid
         # print(z_prob[0,:,:], sampled_num, I_x_z, torch.sum(-torch.log(z_prob[0,:,0]+ eps)))
 
-        pred = self.sigmoid(s_w_feature @ self.charge_dist_mu.transpose(0, 1))  # batch c
+        pred = self.sigmoid(s_w_feature @ self.charge_dist_mu[:args['chargenum'],:].transpose(0, 1))  # batch c
         pred_p = (pred + P_stat) / 2
-        cla_loss = y.float() * torch.log(pred_p) + (1 - y.float()) * torch.log(1 - pred_p)
+        cla_loss = y[:,:args['chargenum']].float() * torch.log(pred_p) + (1 - y[:,:args['chargenum']].float()) * torch.log(1 - pred_p)
         cla_loss_mean = -torch.mean(torch.sum(cla_loss, dim=1))
 
         loss = cla_loss_mean + recon_loss_mean + KL_c + KL_cz_z + KL_origin + 0.02 * I_x_z
