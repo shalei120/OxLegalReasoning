@@ -132,7 +132,7 @@ class Runner:
         plot_losses = []
         print_loss_total = 0  # Reset every print_every
         plot_loss_total = 0  # Reset every plot_every
-
+        print_littleloss_total = 0
         print(type(self.textData.word2index))
 
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, eps=1e-3, amsgrad=True)
@@ -161,6 +161,7 @@ class Runner:
 
                 if args['model_arch'] in ['lstmgmib']:
                     loss, littleloss = self.model(x)  # batch seq_len outsize
+                    print_littleloss_total += littleloss.data
                 else:
                     loss = self.model(x)  # batch seq_len outsize
 
@@ -177,15 +178,16 @@ class Runner:
                 if iter % print_every == 0:
                     print_loss_avg = print_loss_total / print_every
                     print_loss_total = 0
+                    print_littleloss_avg = print_littleloss_total / print_every
+                    print_littleloss_total = 0
 
                     if args['model_arch'] in ['lstmgmib']:
                         print('%s (%d %d%%) %.4f ' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
-                                                 iter, iter / n_iters * 100, print_loss_avg), end='')
-                        print(littleloss)
+                                                      iter, iter / n_iters * 100, print_loss_avg), end='')
+                        print(print_littleloss_avg)
                     else:
                         print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
                                                      iter, iter / n_iters * 100, print_loss_avg))
-
 
                 if iter % plot_every == 0:
                     plot_loss_avg = plot_loss_total / plot_every
