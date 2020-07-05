@@ -102,7 +102,7 @@ class LSTM_GMIB_Model(nn.Module):
         eps = Variable(torch.randn(mu.size())).to(args['device'])
         return mu + torch.exp(log_var / 2) * eps
 
-    def forward(self, x, eps = 0.000001):
+    def forward(self, x, eps = 1e-6):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
@@ -173,7 +173,8 @@ class LSTM_GMIB_Model(nn.Module):
         P_c_w = self.softmax(logit_P_c_w)  # batch seq charge
         KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim = 2)
         KL_c = torch.mean(KL_c)
-        H_c_w = -torch.sum(P_c_w * torch.log(P_c_w), dim = 2)
+        H_c_w = -torch.sum(P_c_w * torch.log(P_c_w + eps), dim = 2)
+        H_c_w = torch.mean(H_c_w)
 
         KL_origin = torch.mean(0.5 * (torch.exp(self.charge_dist_logvar) + self.charge_dist_mu ** 2  - 1 - self.charge_dist_logvar))
 
@@ -196,10 +197,9 @@ class LSTM_GMIB_Model(nn.Module):
         # wordnum = torch.sum(mask, dim = 1)
         # print(sampled_num / wordnum)
         # exit()
+        tt =  torch.stack([cla_loss_mean,  recon_loss_mean, KL_c, KL_cz_z,  KL_origin,  I_x_z, H_c_w])
 
-        return loss, torch.stack([cla_loss_mean,  recon_loss_mean, KL_c, KL_cz_z,  KL_origin,  I_x_z, H_c_w])
-        # float(cla_loss_mean.cpu().detach().numpy()), float(recon_loss_mean.cpu().detach().numpy()), float(KL_c.cpu().detach().numpy()),
-        # float(KL_cz_z.cpu().detach().numpy()), float(KL_origin.cpu().detach().numpy()), float(I_x_z.cpu().detach().numpy()))
+        return loss, tt
 
     def predict(self, x):
         encoderInputs = x['enc_input']
@@ -236,7 +236,7 @@ class LSTM_GMIB_Model(nn.Module):
         # KL_cz_z = torch.mean(KL_cz_z)
 
         w_prime = self.dec_P_x_z(words_z)  # b s e
-        P_recon = self.softmax(w_prime @ self.embedding.weight.transpose(0, 1))  # b s v
+        # P_recon = self.softmax(w_prime @ self.embedding.weight.transpose(0, 1))  # b s v
         # recon_loss = self.CEloss(P_recon, self.encoderInputs) * mask
         # recon_loss_mean = torch.mean(recon_loss)
 
@@ -244,7 +244,7 @@ class LSTM_GMIB_Model(nn.Module):
         # y = y[:, :, :(args['chargenum'] + 1)]  # add content class
         # y = torch.sum(y, dim=1)  # b chargenum
         # P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
-        P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim=-1, keepdim=True)  # batch seq charge
+        P_c_w = self.softmax(logit_P_c_w)  # batch seq charge
         # KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim=2)
         # KL_c = torch.mean(KL_c)
 
