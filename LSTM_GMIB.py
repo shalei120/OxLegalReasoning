@@ -197,7 +197,7 @@ class LSTM_GMIB_Model(nn.Module):
         # print(sampled_num / wordnum)
         # exit()
 
-        return loss, (cla_loss_mean.data,  recon_loss_mean.data, KL_c.data, KL_cz_z.data,  KL_origin.data,  I_x_z.data, H_c_w.data)
+        return loss, torch.stack([cla_loss_mean,  recon_loss_mean, KL_c, KL_cz_z,  KL_origin,  I_x_z, H_c_w])
         # float(cla_loss_mean.cpu().detach().numpy()), float(recon_loss_mean.cpu().detach().numpy()), float(KL_c.cpu().detach().numpy()),
         # float(KL_cz_z.cpu().detach().numpy()), float(KL_origin.cpu().detach().numpy()), float(I_x_z.cpu().detach().numpy()))
 
