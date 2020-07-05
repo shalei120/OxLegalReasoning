@@ -181,13 +181,13 @@ class Runner:
 
                 iter += 1
             if args['model_arch'] in ['lstmiterib', 'lstmgrid','lstmgmib']:
-                accuracy, EM, p,r,acc = self.test('test', max_accu)
-                if accuracy > max_accu or max_accu == -1:
-                    print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
+                accuracy, EM, p,r,acc, F_macro, F_micro, S = self.test('test', max_accu)
+                if EM > max_accu or max_accu == -1:
+                    print('accuracy = ', EM, '>= min_accuracy(', max_accu, '), saving model...')
                     torch.save(self.model, self.model_path)
                     max_accu = accuracy
 
-                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy,EM, p,r,acc,
+                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy,EM, p,r,acc, F_macro, F_micro, S,
                       'max accuracy=', max_accu)
 
             else:
@@ -217,6 +217,11 @@ class Runner:
         r = 0.0
         acc = 0.0
 
+        TP_c = np.zeros(args['chargenum'])
+        FP_c = np.zeros(args['chargenum'])
+        FN_c = np.zeros(args['chargenum'])
+        TN_c = np.zeros(args['chargenum'])
+
         with torch.no_grad():
             pppt = False
             for batch in self.textData.getBatches(datasetname):
@@ -231,6 +236,8 @@ class Runner:
                         if anses[0] == gold[0]:
                             right+=1
                         goldlist = list(gold[:gold.index(args['chargenum'])])
+                        ans_set = set(anses)
+                        gold_set = set(goldlist)
                         intersect = set(anses)
                         joint = set(anses)
                         intersect = intersect.intersection(set(goldlist))
@@ -249,6 +256,27 @@ class Runner:
                         # print(acc, p,r)
                         # exit()
                         total+=1
+
+                        tp_c = np.zeros(args['chargenum'])
+                        fp_c = np.zeros(args['chargenum'])
+                        fn_c = np.zeros(args['chargenum'])
+                        for a in ans_set:
+                            if a in gold_set:
+                                tp_c[a] =1
+                            else:
+                                fp_c[a] =1
+                        for a in gold_set:
+                            if a not in ans_set:
+                                fn_c[a] =1
+
+                        tn_c = 1 - tp_c - fp_c - fn_c
+
+                        TP_c += tp_c
+                        FP_c += fp_c
+                        FN_c += fn_c
+                        TN_c += tn_c
+
+
 
                 else:
                     output_probs, output_labels = self.model.predict(x)
@@ -280,6 +308,7 @@ class Runner:
 
         accuracy = right / total
 
+
         if accuracy > max_accuracy:
             with open(args['rootDir'] + '/error_case_'+args['model_arch']+'.txt', 'w') as wh:
                 for d in dset:
@@ -291,7 +320,19 @@ class Runner:
                     wh.write('\n')
             wh.close()
         if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
-            return accuracy, exact_match/total, p,r,acc
+            P_c = TP_c / (TP_c + FP_c)
+            R_c = TP_c / (TP_c + FN_c)
+            F_c = 2*P_c*R_c / (P_c + R_c)
+            F_macro = np.mean(F_c)
+            TP_micro = np.sum(TP_c)
+            FP_micro = np.sum(FP_c)
+            FN_micro = np.sum(FN_c)
+
+            P_micro = TP_micro / (TP_micro + FP_micro)
+            R_micro = TP_micro / (TP_micro + FN_micro)
+            F_micro = 2 * P_micro * R_micro / (P_micro + R_micro)
+            S = 100 * (F_macro + F_micro) / 2
+            return accuracy, exact_match/total, p,r,acc, F_macro, F_micro, S
         else:
             return accuracy
 
