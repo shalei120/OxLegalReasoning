@@ -170,9 +170,10 @@ class LSTM_GMIB_Model(nn.Module):
         y, _ = torch.max(y, dim=1)  # b chargenum+1
 
         P_c = (y.float() + 0.00001) / torch.sum(y.float() + 0.00001, dim = 1, keepdim=True)
-        P_c_w = logit_P_c_w / torch.sum(logit_P_c_w, dim = -1, keepdim=True) # batch seq charge
+        P_c_w = self.softmax(logit_P_c_w)  # batch seq charge
         KL_c = torch.sum(P_c_w * torch.log(P_c_w / P_c.unsqueeze(1)), dim = 2)
         KL_c = torch.mean(KL_c)
+        H_c_w = -torch.sum(P_c_w * torch.log(P_c_w), dim = 2)
 
         KL_origin = torch.mean(0.5 * (torch.exp(self.charge_dist_logvar) + self.charge_dist_mu ** 2  - 1 - self.charge_dist_logvar))
 
@@ -190,13 +191,13 @@ class LSTM_GMIB_Model(nn.Module):
         cla_loss = y[:,:args['chargenum']].float() * torch.log(pred_p) + (1 - y[:,:args['chargenum']].float()) * torch.log(1 - pred_p)
         cla_loss_mean = -torch.mean(torch.sum(cla_loss, dim=1))
 
-        loss = cla_loss_mean + recon_loss_mean + KL_c + KL_cz_z + KL_origin + 0.02 * I_x_z
+        loss = cla_loss_mean + recon_loss_mean + KL_c + KL_cz_z + KL_origin + 0.02 * I_x_z + H_c_w
 
         # wordnum = torch.sum(mask, dim = 1)
         # print(sampled_num / wordnum)
         # exit()
 
-        return loss, torch.stack([cla_loss_mean,  recon_loss_mean, KL_c, KL_cz_z,  KL_origin,  I_x_z])
+        return loss, torch.stack([cla_loss_mean,  recon_loss_mean, KL_c, KL_cz_z,  KL_origin,  I_x_z, H_c_w])
         # float(cla_loss_mean.cpu().detach().numpy()), float(recon_loss_mean.cpu().detach().numpy()), float(KL_c.cpu().detach().numpy()),
         # float(KL_cz_z.cpu().detach().numpy()), float(KL_origin.cpu().detach().numpy()), float(I_x_z.cpu().detach().numpy()))
 
