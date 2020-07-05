@@ -100,6 +100,7 @@ class LSTM_grid_Model(nn.Module):
         loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
         loss = -torch.mean(torch.sum(loss, dim = 1))
         return recon_loss_mean + loss
+        # return recon_loss_mean
 
     def predict(self, x):
         encoderInputs = x['enc_input']
