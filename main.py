@@ -244,17 +244,17 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
 
                 if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
-                    answer = self.model.predict(x)
-                    y = F.one_hot(batch.label, num_classes=args['chargenum'] + 2)
+                    answer = self.model.predict(x).cpu().numpy()
+                    y = F.one_hot(torch.LongTensor(batch.label), num_classes=args['chargenum'] + 2)
                     y = y[:, :, :args['chargenum']]  # add content class
                     y, _ = torch.max(y, dim=1)
-                    y = y.bool()
-                    exact_match += ((answer == y).sum(dim = 1) == args['chargenum']).sum()
-                    total += answer.size()[0]
-                    tp_c = ((answer == True) & (answer == y)).sum(dim = 0) # c
-                    fp_c = ((answer == True) & (y == False)).sum(dim = 0) # c
-                    fn_c = ((answer == False) & (y == True)).sum(dim = 0) # c
-                    tn_c = ((answer == False) & (y == False)).sum(dim = 0) # c
+                    y = y.bool().numpy()
+                    exact_match += ((answer == y).sum(axis = 1) == args['chargenum']).sum()
+                    total += answer.shape[0]
+                    tp_c = ((answer == True) & (answer == y)).sum(axis = 0) # c
+                    fp_c = ((answer == True) & (y == False)).sum(axis = 0) # c
+                    fn_c = ((answer == False) & (y == True)).sum(axis = 0) # c
+                    tn_c = ((answer == False) & (y == False)).sum(axis = 0) # c
                     TP_c += tp_c
                     FP_c += fp_c
                     FN_c += fn_c
