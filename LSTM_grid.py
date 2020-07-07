@@ -57,6 +57,8 @@ class LSTM_grid_Model(nn.Module):
         #     nn.Linear(args['hiddenSize'], args['chargenum']),
         #     nn.LogSoftmax(dim=-1)
         #   ).to(args['device'])
+
+        self.indexsequence = torch.LongTensor(list(range(args['maxLength']))).to(args['device'])
         
     def sample_z(self, mu, log_var,batch_size):
         eps = Variable(torch.randn(batch_size, args['style_len']*2* args['numLayers'])).to(args['device'])
@@ -75,13 +77,20 @@ class LSTM_grid_Model(nn.Module):
         self.encoder_lengths = x['enc_len']
         self.classifyLabels = x['labels'].to(args['device'])
         self.batch_size = self.encoderInputs.size()[0]
+        self.seqlen = self.encoderInputs.size()[1]
 
         en_output, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
 
+        mask = torch.sign(self.encoderInputs).float()
         en_hidden, en_cell = en_state   #2 batch hid
 
         chargeatt = torch.einsum('bsh,ch->bcs',en_output, self.charge_embs)
         chargeatt = self.softmax(chargeatt)
+
+        indexseq = self.indexsequence[:self.seqlen].float()
+        EX = torch.sum(chargeatt * indexseq.unsqueeze(0).unsqueeze(1), dim = 2, keepdim=True) # batch charge 1
+        VARX = torch.sum(chargeatt * ((indexseq.unsqueeze(0).unsqueeze(1) - EX)**2), dim = 2) # batch charge
+        meanVAR = VARX.mean()
 
         feature_for_each_charge = torch.einsum('bsh,bcs->bch',en_output, chargeatt)
 
@@ -99,7 +108,7 @@ class LSTM_grid_Model(nn.Module):
         pred = self.sigmoid(maxpool @ self.charge_embs.transpose(0,1)).to(args['device']) #batch c
         loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
         loss = -torch.mean(torch.sum(loss, dim = 1))
-        return recon_loss_mean + loss
+        return recon_loss_mean + loss + meanVAR
         # return recon_loss_mean
 
     def predict(self, x):
