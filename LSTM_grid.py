@@ -127,16 +127,19 @@ class LSTM_grid_Model(nn.Module):
 
         yesno = self.classify2(feature_for_each_charge)  # b c 2
 
-        pred = torch.argmax(yesno, dim = -1)
-        finalanswer = []
-        for b in range(batch_size):
-            decode_id_list = []
-            for ind, choose in enumerate(pred[b,:]):
-                if choose == 1:
-                    decode_id_list.append(ind)
-            if len(decode_id_list) == 0:
-                decode_id_list.append(torch.argmax(yesno[b,:,1]))
-            finalanswer.append(decode_id_list)
+        choose_res = torch.argmax(yesno, dim = -1)
+
+        max_choose, _ = torch.max(yesno[:,:,1], dim = 1)
+        choose_res = choose_res | (yesno[:,:,1] == max_choose.unsqueeze(1))
+        # finalanswer = []
+        # for b in range(batch_size):
+        #     decode_id_list = []
+        #     for ind, choose in enumerate(pred[b,:]):
+        #         if choose == 1:
+        #             decode_id_list.append(ind)
+        #     if len(decode_id_list) == 0:
+        #         decode_id_list.append(torch.argmax(yesno[b,:,1]))
+        #     finalanswer.append(decode_id_list)
 
 
-        return finalanswer
+        return choose_res
