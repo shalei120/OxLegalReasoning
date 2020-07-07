@@ -71,6 +71,10 @@ class Runner:
         self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch'] + '.mdl'
 
     def main(self):
+
+        if args['model_arch'] in ['lstmgrid']:
+            args['batchSize'] = 64
+
         self.textData = TextData('cail')
         self.start_token = self.textData.word2index['START_TOKEN']
         self.end_token = self.textData.word2index['END_TOKEN']
@@ -300,10 +304,10 @@ class Runner:
                     wh.write('\n')
             wh.close()
         if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
-            P_c = TP_c / (TP_c + FP_c + eps)
-            R_c = TP_c / (TP_c + FN_c + eps)
-            F_c = 2 * P_c * R_c / (P_c + R_c + eps)
-            F_macro = np.mean(F_c)
+            P_c = TP_c / (TP_c + FP_c)
+            R_c = TP_c / (TP_c + FN_c)
+            F_c = 2 * P_c * R_c / (P_c + R_c)
+            F_macro = np.nanmean(F_c)
             TP_micro = np.sum(TP_c)
             FP_micro = np.sum(FP_c)
             FN_micro = np.sum(FN_c)
