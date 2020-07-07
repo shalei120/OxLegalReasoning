@@ -11,9 +11,9 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from tqdm import  tqdm
+from tqdm import tqdm
 import time, datetime
-import math,random
+import math, random
 import nltk
 import pickle
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
@@ -52,7 +52,6 @@ else:
     args['model_arch'] = cmdargs.modelarch
 
 
-
 def asMinutes(s):
     m = math.floor(s / 60)
     s -= m * 60
@@ -66,9 +65,10 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (%s)' % (asMinutes(s), datetime.datetime.now())
 
+
 class Runner:
     def __init__(self):
-        self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch']+ '.mdl'
+        self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch'] + '.mdl'
 
     def main(self):
         self.textData = TextData('cail')
@@ -123,7 +123,6 @@ class Runner:
             self.model = self.model.to(args['device'])
             self.train()
 
-
     def train(self, print_every=10000, plot_every=10, learning_rate=0.001):
         start = time.time()
         plot_losses = []
@@ -142,7 +141,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-        # accuracy = self.test('test', max_accu)
+        accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 
@@ -153,8 +152,8 @@ class Runner:
                 x['enc_len'] = batch.encoder_lens
                 x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
-                if  args['model_arch'] not in ['lstmiterib', 'lstmgrid','lstmgmib']:
-                    x['labels'] = x['labels'][:,0]
+                if args['model_arch'] not in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
+                    x['labels'] = x['labels'][:, 0]
 
                 if args['model_arch'] in ['lstmgmib']:
                     loss, littleloss = self.model(x)  # batch seq_len outsize
@@ -180,12 +179,11 @@ class Runner:
 
                     if args['model_arch'] in ['lstmgmib']:
                         print('%s (%d %d%%) %.4f ' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
-                                                 iter, iter / n_iters * 100, print_loss_avg), end='')
+                                                      iter, iter / n_iters * 100, print_loss_avg), end='')
                         print(print_littleloss_avg)
                     else:
                         print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
                                                      iter, iter / n_iters * 100, print_loss_avg))
-
 
                 if iter % plot_every == 0:
                     plot_loss_avg = plot_loss_total / plot_every
@@ -194,14 +192,15 @@ class Runner:
 
                 iter += 1
 
-            if args['model_arch'] in ['lstmiterib', 'lstmgrid','lstmgmib']:
-                accuracy, EM, p,r,acc, F_macro, F_micro, S = self.test('test', max_accu)
+            if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
+                accuracy, EM, p, r, acc, F_macro, F_micro, S = self.test('test', max_accu)
                 if EM > max_accu or max_accu == -1:
                     print('accuracy = ', EM, '>= min_accuracy(', max_accu, '), saving model...')
                     torch.save(self.model, self.model_path)
                     max_accu = accuracy
 
-                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy,EM, p,r,acc, F_macro, F_micro, S,
+                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, EM, p, r,
+                      acc, F_macro, F_micro, S,
                       'max accuracy=', max_accu)
 
             else:
@@ -211,12 +210,13 @@ class Runner:
                     torch.save(self.model, self.model_path)
                     max_accu = accuracy
 
-                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy, 'max accuracy=', max_accu)
+                print('Epoch ', epoch, 'loss = ', sum(losses) / len(losses), 'Valid accuracy = ', accuracy,
+                      'max accuracy=', max_accu)
 
         # self.test()
         # showPlot(plot_losses)
 
-    def test(self, datasetname, max_accuracy):
+    def test(self, datasetname, max_accuracy, eps=1e-20):
         # if not hasattr(self, 'testbatches'):
         #     self.testbatches = {}
         # if datasetname not in self.testbatches:
@@ -240,61 +240,29 @@ class Runner:
             pppt = False
             for batch in self.textData.getBatches(datasetname):
                 x = {}
-                x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
+                x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
                 x['enc_len'] = batch.encoder_lens
 
                 if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
-                    answerlist = self.model.predict(x)
-                    for anses, gold in zip(answerlist, batch.label):
-                        anses = [int(ele) for ele in anses]
-                        if anses[0] == gold[0]:
-                            right+=1
-                        goldlist = list(gold[:gold.index(args['chargenum'])])
-                        ans_set = set(anses)
-                        gold_set = set(goldlist)
-                        intersect = set(anses)
-                        joint = set(anses)
-                        intersect = intersect.intersection(set(goldlist))
-                        joint.update(set(goldlist))
-                        intersect_size=len(intersect)
-                        joint_size= len(joint)
-                        if intersect_size == joint_size:
-                            exact_match += 1
-
-                        # print(intersect,joint, anses, goldlist)
-
-                        acc = (acc * total + intersect_size / joint_size) / (total+1)
-                        p = (p * total + intersect_size / len(anses)) / (total+1)
-                        r = (r * total + intersect_size / len(goldlist)) / (total+1)
-
-                        # print(acc, p,r)
-                        # exit()
-                        total+=1
-
-                        tp_c = np.zeros(args['chargenum'])
-                        fp_c = np.zeros(args['chargenum'])
-                        fn_c = np.zeros(args['chargenum'])
-                        for a in ans_set:
-                            if a in gold_set:
-                                tp_c[a] =1
-                            else:
-                                fp_c[a] =1
-                        for a in gold_set:
-                            if a not in ans_set:
-                                fn_c[a] =1
-
-                        tn_c = 1 - tp_c - fp_c - fn_c
-
-                        TP_c += tp_c
-                        FP_c += fp_c
-                        FN_c += fn_c
-                        TN_c += tn_c
-
-
-
+                    answer = self.model.predict(x)
+                    y = F.one_hot(batch.label, num_classes=args['chargenum'] + 2)
+                    y = y[:, :, :args['chargenum']]  # add content class
+                    y, _ = torch.max(y, dim=1)
+                    y = y.bool()
+                    exact_match += ((answer == y).sum(dim = 1) == args['chargenum']).sum()
+                    total += answer.size()[0]
+                    tp_c = ((answer == True) & (answer == y)).sum(dim = 0) # c
+                    fp_c = ((answer == True) & (y == False)).sum(dim = 0) # c
+                    fn_c = ((answer == False) & (y == True)).sum(dim = 0) # c
+                    tn_c = ((answer == False) & (y == False)).sum(dim = 0) # c
+                    TP_c += tp_c
+                    FP_c += fp_c
+                    FN_c += fn_c
+                    TN_c += tn_c
+                    right = exact_match
                 else:
                     output_probs, output_labels = self.model.predict(x)
-                    if  args['model_arch'] == 'lstmib'or args['model_arch'] == 'lstmibcp' :
+                    if args['model_arch'] == 'lstmib' or args['model_arch'] == 'lstmibcp':
                         output_labels, sampled_words, wordsamplerate = output_labels
                         if not pppt:
                             pppt = True
@@ -306,12 +274,11 @@ class Runner:
                         output_labels, sampled_words, wordsamplerate = output_labels
                         if not pppt:
                             pppt = True
-                            for w, choice in zip(batch.encoderSeqs[0], sampled_words[0,output_labels[0],:]):
+                            for w, choice in zip(batch.encoderSeqs[0], sampled_words[0, output_labels[0], :]):
                                 if choice == 1:
                                     print(self.textData.index2word[w], end='')
                             print('sample rate: ', wordsamplerate[0])
-                            
-                            
+
                     batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
                     right += sum(batch_correct)
                     total += x['enc_input'].size()[0]
@@ -322,9 +289,8 @@ class Runner:
 
         accuracy = right / total
 
-
         if accuracy > max_accuracy:
-            with open(args['rootDir'] + '/error_case_'+args['model_arch']+'.txt', 'w') as wh:
+            with open(args['rootDir'] + '/error_case_' + args['model_arch'] + '.txt', 'w') as wh:
                 for d in dset:
                     wh.write(''.join([self.textData.index2word[wid] for wid in d[0]]))
                     wh.write('\t')
@@ -334,9 +300,9 @@ class Runner:
                     wh.write('\n')
             wh.close()
         if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
-            P_c = TP_c / (TP_c + FP_c)
-            R_c = TP_c / (TP_c + FN_c)
-            F_c = 2*P_c*R_c / (P_c + R_c)
+            P_c = TP_c / (TP_c + FP_c + eps)
+            R_c = TP_c / (TP_c + FN_c + eps)
+            F_c = 2 * P_c * R_c / (P_c + R_c + eps)
             F_macro = np.mean(F_c)
             TP_micro = np.sum(TP_c)
             FP_micro = np.sum(FP_c)
@@ -346,34 +312,35 @@ class Runner:
             R_micro = TP_micro / (TP_micro + FN_micro)
             F_micro = 2 * P_micro * R_micro / (P_micro + R_micro)
             S = 100 * (F_macro + F_micro) / 2
-            return accuracy, exact_match/total, p,r,acc, F_macro, F_micro, S
+            return accuracy, exact_match / total, p, r, acc, F_macro, F_micro, S
         else:
             return accuracy
 
-    def indexesFromSentence(self,  sentence):
-        return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['UNK'] for word in sentence]
+    def indexesFromSentence(self, sentence):
+        return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['UNK']
+                for word in sentence]
 
     def tensorFromSentence(self, sentence):
         indexes = self.indexesFromSentence(sentence)
         # indexes.append(self.textData.word2index['END_TOKEN'])
         return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
-    def evaluate(self,  sentence, correctlabel, max_length=20):
+    def evaluate(self, sentence, correctlabel, max_length=20):
         with torch.no_grad():
-            input_tensor = self.tensorFromSentence( sentence)
+            input_tensor = self.tensorFromSentence(sentence)
             input_length = input_tensor.size()[0]
             # encoder_hidden = encoder.initHidden()
 
             # encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
-            x={}
+            x = {}
             # print(input_tensor)
-            x['enc_input'] = torch.transpose(input_tensor, 0,1)
+            x['enc_input'] = torch.transpose(input_tensor, 0, 1)
             x['enc_len'] = [input_length]
             x['labels'] = [correctlabel]
             # print(x['enc_input'], x['enc_len'])
             # print(x['enc_input'].shape)
-            decoded_words, label,_ = self.model.predict(x, True)
+            decoded_words, label, _ = self.model.predict(x, True)
 
             return decoded_words, label
 
@@ -388,6 +355,5 @@ class Runner:
 
 
 if __name__ == '__main__':
-    
     r = Runner()
     r.main()
