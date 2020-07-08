@@ -91,6 +91,8 @@ class LSTM_grid_Model(nn.Module):
         EX = torch.sum(chargeatt * indexseq.unsqueeze(0).unsqueeze(1), dim = 2, keepdim=True) # batch charge 1
         VARX = torch.sum(chargeatt * ((indexseq.unsqueeze(0).unsqueeze(1) - EX)**2), dim = 2) # batch charge
         meanVAR = VARX.mean()
+        # print(EX, VARX)
+        # exit(0)
 
         feature_for_each_charge = torch.einsum('bsh,bcs->bch',en_output, chargeatt)
 
@@ -108,7 +110,7 @@ class LSTM_grid_Model(nn.Module):
         pred = self.sigmoid(maxpool @ self.charge_embs.transpose(0,1)).to(args['device']) #batch c
         loss = y.float() * torch.log(pred) + (1-y.float())*torch.log(1-pred)
         loss = -torch.mean(torch.sum(loss, dim = 1))
-        return recon_loss_mean + loss + meanVAR
+        return recon_loss_mean + loss + 0.0001 * meanVAR
         # return recon_loss_mean
 
     def predict(self, x):
@@ -128,6 +130,7 @@ class LSTM_grid_Model(nn.Module):
         yesno = self.classify2(feature_for_each_charge)  # b c 2
 
         # choose_res = torch.argmax(yesno, dim = -1)
+
         choose_res = yesno[:,:,1] > 0.5
 
         max_choose, _ = torch.max(yesno[:,:,1], dim = 1)
