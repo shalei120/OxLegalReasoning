@@ -145,7 +145,7 @@ class Runner:
         args['trainseq2seq'] = False
 
         max_accu = -1
-        accuracy = self.test('test', max_accu)
+        # accuracy = self.test('test', max_accu)
         for epoch in range(args['numEpochs']):
             losses = []
 
@@ -246,6 +246,7 @@ class Runner:
                 x = {}
                 x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
                 x['enc_len'] = batch.encoder_lens
+                x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
 
                 if args['model_arch'] in ['lstmiterib', 'lstmgrid', 'lstmgmib']:
                     answer = self.model.predict(x).cpu().numpy()

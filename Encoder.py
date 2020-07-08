@@ -29,7 +29,7 @@ class Encoder(nn.Module):
 
         if args['encunit'] == 'lstm':
             self.enc_unit = nn.LSTM(input_size=args['embeddingSize'], hidden_size=args['hiddenSize'],
-                                    num_layers=args['enc_numlayer']).to(args['device'])
+                                    num_layers=args['enc_numlayer'], bidirectional = True).to(args['device'])
         elif args['encunit'] == 'gru':
             self.enc_unit = nn.GRU(input_size=args['embeddingSize'], hidden_size=args['hiddenSize'],
                                    num_layers=args['enc_numlayer']).to(args['device'])
