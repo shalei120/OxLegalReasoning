@@ -37,7 +37,7 @@ class Encoder(nn.Module):
         self.element_len = args['hiddenSize']
 
 
-    def forward(self, encoderInputs, encoder_lengths):
+    def forward(self, encoderInputs, encoder_lengths, mask = None):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
@@ -55,7 +55,7 @@ class Encoder(nn.Module):
         enc_input_embed = self.embedding(self.encoderInputs).to(args['device'])#.cuda()   # batch enc_len embedsize  ; already sorted in a decreasing order
         # dec_target_embed = self.embedding(self.decoderTargets).cuda()   # batch dec_len embedsize
 
-        en_outputs, en_state = self.encode(enc_input_embed, self.batch_size) # seq batch emb
+        en_outputs, en_state = self.encode(enc_input_embed, self.batch_size, mask) # seq batch emb
 
         # if np.isnan(en_outputs.data).any()>0:
         #     sdf=0
@@ -66,7 +66,7 @@ class Encoder(nn.Module):
 
         return en_outputs, en_state
 
-    def encode(self, inputs, batch_size):
+    def encode(self, inputs, batch_size, mask = None):
         inputs = torch.transpose(inputs, 0, 1)
         hidden = (
         autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize'])).to(args['device']),
@@ -74,7 +74,19 @@ class Encoder(nn.Module):
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
         packed_input = inputs
-        packed_out, hidden = self.enc_unit(packed_input, hidden)
+        if mask:  # seq, batch
+            mask = torch.transpose(mask, 0,1)
+            packed_out = []
+            for ind in range(packed_input.size()[0]):
+                input_tokens = packed_input[ind,:,:] # batch hid
+                after_unit, hidden1 = self.enc_unit(input_tokens, hidden)
+                hidden  =( mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[0] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[0],
+                  mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[1] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[1])
+                packed_out.append(after_unit)
+            packed_out = torch.stack(packed_out)
+
+        else:
+            packed_out, hidden = self.enc_unit(packed_input, hidden)
         # if np.isnan(packed_out.data).any()>0:
         #     sdf=0
         return packed_out, hidden
