@@ -130,7 +130,8 @@ class LSTM_grid_Model(nn.Module):
         yesno = self.classify2(feature_for_each_charge)  # b c 2
 
         # choose_res = torch.argmax(yesno, dim = -1)
-        choose_res = yesno[:,:,1]>0.5
+
+        choose_res = yesno[:,:,1] > 0.5
 
         max_choose, _ = torch.max(yesno[:,:,1], dim = 1)
         choose_res = choose_res | (yesno[:,:,1] == max_choose.unsqueeze(1))
