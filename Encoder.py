@@ -69,21 +69,22 @@ class Encoder(nn.Module):
     def encode(self, inputs, batch_size, mask = None):
         inputs = torch.transpose(inputs, 0, 1)
         hidden = (
-        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize'])).to(args['device']),
-        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize'])).to(args['device']))
+        autograd.Variable(torch.randn(args['enc_numlayer']*2, batch_size, args['hiddenSize'])).to(args['device']),
+        autograd.Variable(torch.randn(args['enc_numlayer']*2, batch_size, args['hiddenSize'])).to(args['device']))
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
         packed_input = inputs
-        if mask:  # seq, batch
+        if mask is not None:  # seq, batch
             mask = torch.transpose(mask, 0,1)
             packed_out = []
             for ind in range(packed_input.size()[0]):
-                input_tokens = packed_input[ind,:,:] # batch hid
+                input_tokens = packed_input[ind,:,:].unsqueeze(0) # 1 batch hid
                 after_unit, hidden1 = self.enc_unit(input_tokens, hidden)
+                # print(mask[ind,:].size(), hidden1[0].size())
                 hidden  =( mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[0] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[0],
                   mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[1] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[1])
                 packed_out.append(after_unit)
-            packed_out = torch.stack(packed_out)
+            packed_out = torch.cat(packed_out, dim = 0)
 
         else:
             packed_out, hidden = self.enc_unit(packed_input, hidden)
