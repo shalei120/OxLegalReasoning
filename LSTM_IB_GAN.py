@@ -77,9 +77,9 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.softmax = nn.Softmax(dim = -1)
 
         self.x_2_prob_z = nn.Sequential(
-            nn.Linear(args['hiddenSize'], 2)
+            nn.Linear(args['hiddenSize']*2, 2)
           ).to(args['device'])
-        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_to_fea = nn.Linear(args['hiddenSize']*2, args['hiddenSize']).to(args['device'])
 
         self.ChargeClassifier = nn.Sequential(
             nn.Linear(args['hiddenSize'], args['chargenum']),
@@ -146,9 +146,9 @@ class LSTM_IB_GAN_Model(nn.Module):
         # print(sampled_seq)
 
 
-        sampled_word = self.encoderInputs * (sampled_seq[:,:,1])  # batch seq
+        # sampled_word = self.encoderInputs * (sampled_seq[:,:,1])  # batch seq
 
-        en_outputs_masked, en_state = self.encoder_mask(sampled_word, self.encoder_lengths, mask)  # batch seq hid
+        en_outputs_masked, en_state = self.encoder_mask(self.encoderInputs, self.encoder_lengths, sampled_seq[:,:,1])  # batch seq hid
 
         s_w_feature = self.z_to_fea(en_outputs_masked)
         z_nero_sampled, _ = torch.max(s_w_feature, dim = 1) # batch hid
@@ -216,11 +216,12 @@ def train(textData, model_path = args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = batch.encoder_lens
             x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
+            x['labels'] = x['labels'][:, 0]
 
             Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
             Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled))
 
-            Dloss.backward()
+            Dloss.backward(retain_graph=True)
 
             torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
 
@@ -237,7 +238,7 @@ def train(textData, model_path = args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl
 
             G_optimizer.zero_grad()
             Gloss = Gloss_pure - torch.mean(D_model(z_nero_sampled))
-            Gloss.backward()
+            Gloss.backward(retain_graph=True)
             G_optimizer.step()
 
             print_Gloss_total += Gloss.data
@@ -289,6 +290,7 @@ def test(textData, model, datasetname, max_accuracy):
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
             x['enc_len'] = batch.encoder_lens
             x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
+            x['labels'] = x['labels'][:, 0]
 
             output_probs, output_labels = model.predict(x)
 
