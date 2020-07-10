@@ -204,11 +204,12 @@ def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl',
 
     max_accu = -1
 
+    # accuracy = test(textData, G_model, 'test', max_accu)
     for epoch in range(args['numEpochs']):
         Glosses = []
         Dlosses = []
 
-        for batch in batches:
+        for index, batch in enumerate(batches):
 
             # ---------------------
             #  Train Discriminator
@@ -218,21 +219,23 @@ def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl',
             # for param in D_model.parameters():
             #     param.requires_grad = True
 
-            D_optimizer.zero_grad()
-            x = {}
-            x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-            x['enc_len'] = batch.encoder_lens
-            x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
-            x['labels'] = x['labels'][:, 0]
+            for ind in range(index, index+5):
+                ind = ind % n_iters
+                D_optimizer.zero_grad()
+                x = {}
+                x['enc_input'] = autograd.Variable(torch.LongTensor(batches[ind].encoderSeqs)).to(args['device'])
+                x['enc_len'] = batches[ind].encoder_lens
+                x['labels'] = autograd.Variable(torch.LongTensor(batches[ind].label)).to(args['device'])
+                x['labels'] = x['labels'][:, 0]
 
-            Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled))
+                Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
+                Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled))
 
-            Dloss.backward(retain_graph=True)
+                Dloss.backward(retain_graph=True)
 
-            torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
+                torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
 
-            D_optimizer.step()
+                D_optimizer.step()
 
             # if i % n_critic == 0:
             # -----------------
@@ -243,7 +246,14 @@ def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl',
             # for param in D_model.parameters():
             #     param.requires_grad = False
 
+            x = {}
+            x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
+            x['enc_len'] = batch.encoder_lens
+            x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
+            x['labels'] = x['labels'][:, 0]
+
             G_optimizer.zero_grad()
+            Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
             Gloss = Gloss_pure - torch.mean(D_model(z_nero_sampled))
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
@@ -303,25 +313,26 @@ def test(textData, model, datasetname, max_accuracy):
 
             output_probs, output_labels = model.predict(x)
 
-            batch_correct = output_labels.cpu().numpy() == torch.LongTensor(batch.label).cpu().numpy()
+            batch_correct = output_labels.cpu().numpy() == x['labels'].cpu().numpy()
+            # print(output_labels.size(), torch.LongTensor(batch.label).size())
             right += sum(batch_correct)
             total += x['enc_input'].size()[0]
 
             for ind, c in enumerate(batch_correct):
                 if not c:
-                    dset.append((batch.encoderSeqs[ind], batch.label[ind], output_labels[ind]))
+                    dset.append((batch.encoderSeqs[ind], x['labels'][ind], output_labels[ind]))
 
     accuracy = right / total
 
-    if accuracy > max_accuracy:
-        with open(args['rootDir'] + '/error_case_' + args['model_arch'] + '.txt', 'w') as wh:
-            for d in dset:
-                wh.write(''.join([textData.index2word[wid] for wid in d[0]]))
-                wh.write('\t')
-                wh.write(textData.lawinfo['i2c'][int(d[1])])
-                wh.write('\t')
-                wh.write(textData.lawinfo['i2c'][int(d[2])])
-                wh.write('\n')
-        wh.close()
+    # if accuracy > max_accuracy:
+    #     with open(args['rootDir'] + '/error_case_' + args['model_arch'] + '.txt', 'w') as wh:
+    #         for d in dset:
+    #             wh.write(''.join([textData.index2word[wid] for wid in d[0]]))
+    #             wh.write('\t')
+    #             wh.write(textData.lawinfo['i2c'][int(d[1])])
+    #             wh.write('\t')
+    #             wh.write(textData.lawinfo['i2c'][int(d[2])])
+    #             wh.write('\n')
+    #     wh.close()
 
     return accuracy
