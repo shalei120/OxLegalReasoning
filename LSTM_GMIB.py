@@ -199,7 +199,7 @@ class LSTM_GMIB_Model(nn.Module):
         else:
             pred_p = self.ChargeClassifier(torch.cat([s_w_feature, P_stat], dim = 1))
 
-        cla_loss = y[:,:args['chargenum']].float() * torch.log(pred) + (1 - y[:,:args['chargenum']].float()) * torch.log(1 - pred)
+        cla_loss = y[:,:args['chargenum']].float() * torch.log(pred + eps) + (1 - y[:,:args['chargenum']].float()) * torch.log(1 - pred + eps)
         cla_loss_mean = -torch.mean(torch.sum(cla_loss, dim=1))
 
         # cla_loss_GM = y[:,:args['chargenum']].float() * torch.log(P_stat) + (1 - y[:,:args['chargenum']].float()) * torch.log(1 - P_stat)
