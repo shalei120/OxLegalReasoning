@@ -10,4 +10,4 @@ module load cuda/9.2
 #nvidia-smi
 echo $PWD
 # run the application
-python3 main.py -m lstmgmib &> $SLURM_JOB_ID.out
+python3 main.py -m lstmibgan &> $SLURM_JOB_ID.out
