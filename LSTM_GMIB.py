@@ -42,7 +42,7 @@ class LSTM_GMIB_Model(nn.Module):
 
         self.embedding = nn.Embedding(args['vocabularySize'], args['embeddingSize'])
 
-        self.encoder = Encoder(w2i, i2w, self.embedding)
+        self.encoder = Encoder(w2i, i2w, self.embedding, bidirectional = True)
 
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim = -1)
@@ -103,7 +103,7 @@ class LSTM_GMIB_Model(nn.Module):
         eps = Variable(torch.randn(mu.size())).to(args['device'])
         return mu + torch.exp(log_var / 2) * eps
 
-    def build(self, x, eps = 1e-6):
+    def build(self, x, eps = 1e-4):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
