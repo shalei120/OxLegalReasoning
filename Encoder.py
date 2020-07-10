@@ -10,7 +10,7 @@ import datetime
 from Hyperparameters import args
 
 class Encoder(nn.Module):
-    def __init__(self,w2i, i2w, embedding):
+    def __init__(self,w2i, i2w, embedding,bidirectional = False):
         """
         Args:
             args: parameters of the model
@@ -26,13 +26,14 @@ class Encoder(nn.Module):
         self.dtype = 'float32'
 
         self.embedding = embedding
+        self.bidirectional = bidirectional
 
         if args['encunit'] == 'lstm':
             self.enc_unit = nn.LSTM(input_size=args['embeddingSize'], hidden_size=args['hiddenSize'],
-                                    num_layers=args['enc_numlayer'], bidirectional = True).to(args['device'])
+                                    num_layers=args['enc_numlayer'], bidirectional = bidirectional).to(args['device'])
         elif args['encunit'] == 'gru':
             self.enc_unit = nn.GRU(input_size=args['embeddingSize'], hidden_size=args['hiddenSize'],
-                                   num_layers=args['enc_numlayer']).to(args['device'])
+                                   num_layers=args['enc_numlayer'], bidirectional = bidirectional).to(args['device'])
 
         self.element_len = args['hiddenSize']
 
@@ -68,26 +69,29 @@ class Encoder(nn.Module):
 
     def encode(self, inputs, batch_size, mask = None):
         inputs = torch.transpose(inputs, 0, 1)
+        bidirec = 2 if self.bidirectional else 1
         hidden = (
-        autograd.Variable(torch.randn(args['enc_numlayer']*2, batch_size, args['hiddenSize'])).to(args['device']),
-        autograd.Variable(torch.randn(args['enc_numlayer']*2, batch_size, args['hiddenSize'])).to(args['device']))
+        autograd.Variable(torch.randn(args['enc_numlayer']*bidirec, batch_size, args['hiddenSize'])).to(args['device']),
+        autograd.Variable(torch.randn(args['enc_numlayer']*bidirec, batch_size, args['hiddenSize'])).to(args['device']))
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
         packed_input = inputs
         if mask is not None:  # seq, batch
             mask = torch.transpose(mask, 0,1)
-            packed_out = []
-            for ind in range(packed_input.size()[0]):
-                input_tokens = packed_input[ind,:,:].unsqueeze(0) # 1 batch hid
-                after_unit, hidden1 = self.enc_unit(input_tokens, hidden)
-                # print(mask[ind,:].size(), hidden1[0].size())
-                hidden  =( mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[0] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[0],
-                  mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[1] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[1])
-                packed_out.append(after_unit)
-            packed_out = torch.cat(packed_out, dim = 0)
+            # packed_out = []
+            # for ind in range(packed_input.size()[0]):
+            #     input_tokens = packed_input[ind,:,:].unsqueeze(0) # 1 batch hid
+            #     after_unit, hidden1 = self.enc_unit(input_tokens, hidden)
+            #     # print(mask[ind,:].size(), hidden1[0].size())
+            #     hidden  =( mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[0] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[0],
+            #       mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[1] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[1])
+            #     packed_out.append(after_unit)
+            # packed_out = torch.cat(packed_out, dim = 0)
+            packed_input = packed_input * mask.unsqueeze(2).float()
 
-        else:
-            packed_out, hidden = self.enc_unit(packed_input, hidden)
+
+        # else:
+        packed_out, hidden = self.enc_unit(packed_input, hidden)
         # if np.isnan(packed_out.data).any()>0:
         #     sdf=0
         return packed_out, hidden
