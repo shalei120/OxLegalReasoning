@@ -74,7 +74,8 @@ class Runner:
 
         if args['model_arch'] in ['lstmgrid']:
             args['batchSize'] = 64
-
+        elif args['model_arch'] in ['lstmibgan']:
+            args['batchSize'] = 64
         self.textData = TextData('cail')
         self.start_token = self.textData.word2index['START_TOKEN']
         self.end_token = self.textData.word2index['END_TOKEN']
