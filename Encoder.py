@@ -73,6 +73,7 @@ class Encoder(nn.Module):
         hidden = (
         autograd.Variable(torch.randn(args['enc_numlayer']*bidirec, batch_size, args['hiddenSize'])).to(args['device']),
         autograd.Variable(torch.randn(args['enc_numlayer']*bidirec, batch_size, args['hiddenSize'])).to(args['device']))
+        
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
         packed_input = inputs
