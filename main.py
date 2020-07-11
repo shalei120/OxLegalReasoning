@@ -75,6 +75,7 @@ class Runner:
         if args['model_arch'] in ['lstmgrid']:
             args['batchSize'] = 64
         elif args['model_arch'] in ['lstmibgan']:
+            args['classify_type'] = 'single'
             args['batchSize'] = 64
 
         self.textData = TextData('cail')

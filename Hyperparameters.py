@@ -41,6 +41,7 @@ class HP:
         args['maxLengthDeco'] = args['maxLength'] + 1
 
         args['temperature'] =1.0
+        args['classify_type'] = 'multi'
 
         return args
 
