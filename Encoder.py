@@ -69,8 +69,8 @@ class Encoder(nn.Module):
     def encode(self, inputs, batch_size, mask = None):
         inputs = torch.transpose(inputs, 0, 1)
         hidden = (
-        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize'])).to(args['device']),
-        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize'])).to(args['device']))
+        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize']*2)).to(args['device']),
+        autograd.Variable(torch.randn(args['enc_numlayer'], batch_size, args['hiddenSize']*2)).to(args['device']))
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
         packed_input = inputs
