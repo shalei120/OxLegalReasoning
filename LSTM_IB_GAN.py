@@ -36,7 +36,7 @@ class Discriminator(nn.Module):
         self.disc = nn.Sequential(
             nn.Linear(args['hiddenSize'], args['hiddenSize']),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(args['hiddenSize'], 1),
+            nn.Sigmoid(),
         ).to(args['device'])
 
     def forward(self, z_nero):
@@ -219,42 +219,30 @@ def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl',
             # for param in D_model.parameters():
             #     param.requires_grad = True
 
-            for ind in range(index, index+5):
-                ind = ind % n_iters
-                D_optimizer.zero_grad()
-                x = {}
-                x['enc_input'] = autograd.Variable(torch.LongTensor(batches[ind].encoderSeqs)).to(args['device'])
-                x['enc_len'] = batches[ind].encoder_lens
-                x['labels'] = autograd.Variable(torch.LongTensor(batches[ind].label)).to(args['device'])
-                x['labels'] = x['labels'][:, 0]
-
-                Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
-                Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled))
-
-                Dloss.backward(retain_graph=True)
-
-                torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
-
-                D_optimizer.step()
-
-            # if i % n_critic == 0:
-            # -----------------
-            #  Train Generator
-            # -----------------
-            # for param in G_model.parameters():
-            #     param.requires_grad = True
-            # for param in D_model.parameters():
-            #     param.requires_grad = False
-
+            # for ind in range(index, index+5):
+            #     ind = ind % n_iters
+            D_optimizer.zero_grad()
             x = {}
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = batch.encoder_lens
             x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
             x['labels'] = x['labels'][:, 0]
 
-            G_optimizer.zero_grad()
             Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
-            Gloss = Gloss_pure - torch.mean(D_model(z_nero_sampled))
+            Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
+
+            Dloss.backward(retain_graph=True)
+
+            torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
+
+            D_optimizer.step()
+
+            # if i % n_critic == 0:
+            # -----------------
+            #  Train Generator
+            # -----------------
+            G_optimizer.zero_grad()
+            Gloss = Gloss_pure - torch.mean(torch.log(D_model(z_nero_sampled)))
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
 
