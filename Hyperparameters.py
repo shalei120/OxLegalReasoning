@@ -27,7 +27,7 @@ class HP:
 
         args['numEpochs'] = 50
         args['saveEvery'] = 2000
-        args['batchSize'] = 8
+        args['batchSize'] = 16
         args['learningRate'] = 0.001
         args['dropout'] = 0.9
         args['clip'] = 5.0
@@ -41,6 +41,7 @@ class HP:
         args['maxLengthDeco'] = args['maxLength'] + 1
 
         args['temperature'] =1.0
+        args['classify_type'] = 'multi'
 
         return args
 

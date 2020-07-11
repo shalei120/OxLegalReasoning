@@ -111,6 +111,8 @@ class TextData:
         """
         if setname not in self.batches:
             self.shuffle()
+            if  args['classify_type'] == 'single':
+                self.datasets[setname] = [d for d in self.datasets[setname] if len(d[1]) == 1]
 
             batches = []
             print(len(self.datasets[setname]))
