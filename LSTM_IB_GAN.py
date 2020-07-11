@@ -167,16 +167,19 @@ class LSTM_IB_GAN_Model(nn.Module):
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
         tt = torch.stack([recon_loss_mean, recon_loss_mean_all, I_x_z])
+        wordnum = torch.sum(mask, dim=1)
+        sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
+        sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z, z_nero_best, z_nero_sampled, output, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
     def forward(self, x):
-        losses, z_nero_best, z_nero_sampled, _, tt = self.build(x)
+        losses, z_nero_best, z_nero_sampled, _, _,_,tt = self.build(x)
         return losses, z_nero_best, z_nero_sampled, tt
 
     def predict(self, x):
-        _, _, _, output, _ = self.build(x)
-        return output, torch.argmax(output, dim=-1)
+        _, _, _, output,sampled_words, wordsamplerate, _ = self.build(x)
+        return output, (torch.argmax(output, dim=-1), sampled_words, wordsamplerate)
 
 
 def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
@@ -291,6 +294,7 @@ def test(textData, model, datasetname, max_accuracy):
 
     dset = []
 
+    pppt = False
     with torch.no_grad():
         for batch in textData.getBatches(datasetname):
             x = {}
@@ -300,6 +304,16 @@ def test(textData, model, datasetname, max_accuracy):
             x['labels'] = x['labels'][:, 0]
 
             output_probs, output_labels = model.predict(x)
+            output_labels, sampled_words, wordsamplerate = output_labels
+            if not pppt:
+                pppt = True
+                for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
+                    if choice[1] == 1:
+                        print('*',textData.index2word[w],'*', end='')
+                    else:
+                        print(textData.index2word[w], end='')
+
+                print('sample rate: ', wordsamplerate[0])
 
             batch_correct = output_labels.cpu().numpy() == x['labels'].cpu().numpy()
             # print(output_labels.size(), torch.LongTensor(batch.label).size())
