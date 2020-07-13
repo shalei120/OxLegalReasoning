@@ -161,7 +161,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps))
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        omega = torch.mean(torch.sum(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1], dim = 1))
+        omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
 
         output = self.ChargeClassifier(z_nero_sampled).to(args['device'])  # batch chargenum
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
@@ -310,7 +310,7 @@ def test(textData, model, datasetname, max_accuracy):
                 pppt = True
                 for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
                     if choice[1] == 1:
-                        print('*',textData.index2word[w],'*', end='')
+                        print('<',textData.index2word[w],'>', end='')
                     else:
                         print(textData.index2word[w], end='')
 
