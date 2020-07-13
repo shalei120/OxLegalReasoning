@@ -161,17 +161,18 @@ class LSTM_IB_GAN_Model(nn.Module):
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps))
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
+        omega = torch.mean(torch.sum(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1], dim = 1))
 
         output = self.ChargeClassifier(z_nero_sampled).to(args['device'])  # batch chargenum
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
         recon_loss_mean = torch.mean(recon_loss).to(args['device'])
 
-        tt = torch.stack([recon_loss_mean, recon_loss_mean_all, I_x_z])
+        tt = torch.stack([recon_loss_mean, recon_loss_mean_all, I_x_z, omega])
         wordnum = torch.sum(mask, dim=1)
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + 0.1*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
     def forward(self, x):
         losses, z_nero_best, z_nero_sampled, _, _,_,tt = self.build(x)
