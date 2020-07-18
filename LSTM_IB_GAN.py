@@ -25,7 +25,7 @@ def timeSince(since, percent):
     s = now - since
     es = s / (percent)
     rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
+    return '%s (- %s)' % (asMinutes(s), datetime.datetime.now())
 
 
 class Discriminator(nn.Module):
@@ -175,6 +175,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
         return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+
 
     def forward(self, x):
         losses, z_nero_best, z_nero_sampled, _, _,_,tt = self.build(x)
