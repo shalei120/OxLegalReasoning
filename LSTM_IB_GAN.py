@@ -57,7 +57,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         2 LTSM layers
     """
 
-    def __init__(self, w2i, i2w):
+    def __init__(self, w2i, i2w, LM):
         """
         Args:
             args: parameters of the model
@@ -66,6 +66,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         super(LSTM_IB_GAN_Model, self).__init__()
         print("Model creation...")
 
+        self.LM = LM
         self.word2index = w2i
         self.index2word = i2w
         self.max_length = args['maxLengthDeco']
@@ -113,7 +114,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         y_hard.scatter_(1, ind.view(-1, 1), 1)
         y_hard = y_hard.view(*shape)
         y_hard = (y_hard - y).detach() + y
-        return y_hard
+        return y_hard, y
 
     def build(self, x, eps=0.000001):
         '''
@@ -144,9 +145,9 @@ class LSTM_IB_GAN_Model(nn.Module):
         z_logit = self.x_2_prob_z(en_outputs_select.to(args['device']))  # batch seq 2
 
         z_logit_fla = z_logit.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq = self.gumbel_softmax(z_logit_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
+        sampled_seq, sampled_seq_soft = self.gumbel_softmax(z_logit_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
         sampled_seq = sampled_seq * mask.unsqueeze(2)
-
+        sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
         # print(sampled_seq)
 
         # sampled_word = self.encoderInputs * (sampled_seq[:,:,1])  # batch seq
@@ -161,7 +162,8 @@ class LSTM_IB_GAN_Model(nn.Module):
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps))
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
+        # omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
+        omega = self.LM.LMloss(sampled_seq_soft[:,:,1], self.encoderInputs)
 
         output = self.ChargeClassifier(z_nero_sampled).to(args['device'])  # batch chargenum
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
@@ -172,7 +174,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + 0.1*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
     def forward(self, x):
         losses, z_nero_best, z_nero_sampled, _, _,_,tt = self.build(x)
@@ -183,7 +185,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         return output, (torch.argmax(output, dim=-1), sampled_words, wordsamplerate)
 
 
-def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
+def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
           learning_rate=0.001, n_critic=5):
     start = time.time()
     plot_losses = []
@@ -191,7 +193,7 @@ def train(textData, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl',
     plot_Gloss_total = 0  # Reset every plot_every
     print_Dloss_total = 0  # Reset every print_every
     plot_Dloss_total = 0  # Reset every plot_every
-    G_model = LSTM_IB_GAN_Model(textData.word2index, textData.index2word).to(args['device'])
+    G_model = LSTM_IB_GAN_Model(textData.word2index, textData.index2word, LM).to(args['device'])
     D_model = Discriminator().to(args['device'])
 
     print(type(textData.word2index))

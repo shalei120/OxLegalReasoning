@@ -21,6 +21,8 @@ from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 import numpy as np
 import copy
 from Hyperparameters import args
+from LanguageModel import LanguageModel
+
 from LSTM import LSTM_Model
 from LSTM_att import LSTM_att_Model
 from LSTM_IB import LSTM_IB_Model
@@ -103,7 +105,11 @@ class Runner:
             self.train()
         elif args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model.')
-            LSTM_IB_GAN.train(self.textData)
+            LM = torch.load(args['rootDir']+'/LM.pkl', map_location=args['device'])
+            for param in LM.parameters():
+                param.requires_grad = False
+
+            LSTM_IB_GAN.train(self.textData, LM)
         elif args['model_arch'] == 'lstmibcp':
             print('Using LSTM information bottleneck model. -- complete words')
             self.model = LSTM_IB_CP_Model(self.textData.word2index, self.textData.index2word)
