@@ -13,7 +13,6 @@ from queue import PriorityQueue
 import copy
 
 from textdata import TextData
-from kenLM import LMEvaluator as LMEr
 
 class LanguageModel(nn.Module):
     def __init__(self,w2i, i2w):
@@ -82,7 +81,6 @@ class LanguageModel(nn.Module):
         state = initial_state
 
         output, out_state = self.dec_unit(inputs, state)
-        # output = output.cpu()
 
         output = self.out_unit(output.view(batch_size * dec_len, args['hiddenSize']))
         output = output.view(dec_len, batch_size, args['vocabularySize'])
@@ -92,6 +90,20 @@ class LanguageModel(nn.Module):
     def forward(self, x):
         de_outputs, recon_loss_mean = self.buildModel(x)
         return de_outputs, recon_loss_mean
+
+    def LMloss(self, sampled_soft, decoderInputs):
+        dec_input_embed = self.embedding(decoderInputs).to(args['device'])
+        dec_input_embed = dec_input_embed * sampled_soft
+        dec_input_embed = dec_input_embed[:,:-1,:]
+        init_state = (self.init_state[0].repeat([1, batch_size, 1]), self.init_state[1].repeat([1, batch_size, 1]))
+        de_outputs, de_state = self.decoder_t(init_state, dec_input_embed, batch_size, self.dec_len)
+        decoderTargets = decoderInputs[:,1:,:]
+        recon_loss = self.CEloss(torch.transpose(de_outputs, 1, 2), decoderTargets)
+        mask = torch.sign(decoderTargets.float())
+        recon_loss = torch.squeeze(recon_loss) * mask
+        recon_loss_mean = torch.mean(recon_loss, dim=-1)
+        return recon_loss_mean
+
 
 def train(textData, model, model_path, print_every=10000, plot_every=10, learning_rate=0.001):
     start = time.time()
