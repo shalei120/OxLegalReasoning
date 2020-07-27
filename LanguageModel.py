@@ -14,7 +14,7 @@ from queue import PriorityQueue
 import copy,math
 from utils import *
 
-from textdata import TextData
+from textdataLM import TextData
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
 parser.add_argument('--modelarch', '-m')
@@ -191,10 +191,9 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
         for batch in batches:
             optimizer.zero_grad()
             x = {}
-            x['dec_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-            x['dec_len'] = batch.encoder_lens
-            x['dec_target'] = x['dec_input'][:,1:]
-            x['dec_input'] = x['dec_input'][:,:-1]
+            x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
+            x['dec_len'] = batch.decoder_lens
+            x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
 
             loss , fake_loss = model(x)  # batch seq_len outsize
             loss = torch.mean(loss + fake_loss)
@@ -239,10 +238,9 @@ def test(textData, model, datasetname, eps=1e-20):
     with torch.no_grad():
         for batch in textData.getBatches(datasetname):
             x = {}
-            x['dec_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-            x['dec_len'] = batch.encoder_lens
-            x['dec_target'] = x['dec_input'][:,1:]
-            x['dec_input'] = x['dec_input'][:,:-1]
+            x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
+            x['dec_len'] = batch.decoder_lens
+            x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
             recon_loss_mean , _= model(x, test = True)  # batch seq_len outsize
             ave_loss = (ave_loss * num + sum(recon_loss_mean)) / (num + len(recon_loss_mean))
             num += len(recon_loss_mean)
@@ -252,7 +250,7 @@ def test(textData, model, datasetname, eps=1e-20):
 
 
 if __name__ == '__main__':
-    args['batchSize'] = 64
+    args['batchSize'] = 256
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
     # args['maxLengthDeco'] = args['maxLength'] + 1
