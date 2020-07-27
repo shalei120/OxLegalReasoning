@@ -145,7 +145,9 @@ class LSTM_IB_GAN_Model(nn.Module):
         z_logit = self.x_2_prob_z(en_outputs_select.to(args['device']))  # batch seq 2
 
         z_logit_fla = z_logit.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq, sampled_seq_soft = self.gumbel_softmax(z_logit_fla).reshape((self.batch_size, self.seqlen, 2))  # batch seq  //0-1
+        sampled_seq, sampled_seq_soft = self.gumbel_softmax(z_logit_fla) # batch seq  //0-1
+        sampled_seq = sampled_seq.reshape((self.batch_size, self.seqlen, 2))
+        sampled_seq_soft = sampled_seq_soft.reshape((self.batch_size, self.seqlen, 2))
         sampled_seq = sampled_seq * mask.unsqueeze(2)
         sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
         # print(sampled_seq)
@@ -163,7 +165,8 @@ class LSTM_IB_GAN_Model(nn.Module):
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
         # omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
-        omega = self.LM.LMloss(sampled_seq_soft[:,:,1], self.encoderInputs)
+        omega = self.LM.LMloss(sampled_seq_soft[:,:,1],sampled_seq[:, :, 1], self.encoderInputs)
+        omega = torch.mean(omega)
 
         output = self.ChargeClassifier(z_nero_sampled).to(args['device'])  # batch chargenum
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
@@ -174,7 +177,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.05 * I_x_z + 0.001*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
 
     def forward(self, x):
