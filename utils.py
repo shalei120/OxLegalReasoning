@@ -1,5 +1,5 @@
 import numpy as np
-def KnuthSampling(total, m):
+def KnuthSampling(total, m, left = -1):
     '''
     :param total: total
     :param m: sample
@@ -8,8 +8,9 @@ def KnuthSampling(total, m):
     res = []
     n = total
     for i in range(total):
-        if np.random.random() < m / n:
-            res.append(i)
-            m -= 1
+        if i != left:
+            if np.random.random() < m / n:
+                res.append(i)
+                m -= 1
         n -= 1
     return res
