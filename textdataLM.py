@@ -83,6 +83,9 @@ class TextData:
             # Unpack the sample
             sen_ids= samples[i]
 
+            if len(sen_ids) > args['maxLengthEnco']:
+                sen_ids = sen_ids[:args['maxLengthEnco']]
+                
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']])
@@ -98,18 +101,30 @@ class TextData:
         return batch
 
     def paragraph2sentence(self, doclist):
-        split_tokens = [self.word2index['。']]
+        split_tokens = [self.word2index['。'],self.word2index['；'],self.word2index['，']]
         sen_list = []
+        count = 0
+        cc=0
         for sen_ids, charge_list, raw_sentence in doclist:
             start = 0
+            sen_ids = [w for w in sen_ids if w not in ['\r\n']]
             for ind,w in enumerate(sen_ids):
                 if w in split_tokens:
-                    sen_list.append(sen_ids[start:ind+1])
+                    if 8 < ind-start < 500 :
+                        sen_list.append(sen_ids[start:ind+1])
+                    # if len(sen_list[-1]) > 500:
+                    #     print(raw_sentence[start:ind+1])
+                    #     print(sen_list[-1])
+                    #     count += 1
+                    # if len(sen_list[-1]) <10:
+                    #     cc += 1
                     start = ind+1
 
             if start < len(sen_ids)-1:
                 sen_list.append(sen_ids[start:])
 
+        # print(len(sen_list),count,cc)
+        # exit(0)
         return sen_list
 
 
@@ -124,12 +139,13 @@ class TextData:
             batches = []
             print(len(self.datasets[setname]))
             dataset_sen = self.paragraph2sentence(self.datasets[setname])
-            print(len(dataset_sen))
+            datanum = len(dataset_sen)
+            print(datanum)
             def genNextSamples():
                 """ Generator over the mini-batch training samples
                 """
-                for i in range(0, self.getSampleSize(setname), args['batchSize']):
-                    yield dataset_sen[i:min(i + args['batchSize'], self.getSampleSize(setname))]
+                for i in range(0, datanum, args['batchSize']):
+                    yield dataset_sen[i:min(i + args['batchSize'], datanum)]
 
             # TODO: Should replace that by generator (better: by tf.queue)
 
@@ -143,12 +159,6 @@ class TextData:
         # print([self.index2word[id] for id in batches[2].encoderSeqs[5]], batches[2].raws[5])
         return self.batches[setname]
 
-    def getSampleSize(self, setname = 'train'):
-        """Return the size of the dataset
-        Return:
-            int: Number of training samples
-        """
-        return len(self.datasets[setname])
 
     def getVocabularySize(self):
         """Return the number of words present in the dataset
