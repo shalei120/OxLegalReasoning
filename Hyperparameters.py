@@ -42,6 +42,7 @@ class HP:
 
         args['temperature'] =1.0
         args['classify_type'] = 'multi'
+        args['task'] = 'charge'
 
         return args
 
