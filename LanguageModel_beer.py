@@ -1,3 +1,5 @@
+import functools
+print = functools.partial(print, flush=True)
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
