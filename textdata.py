@@ -1,4 +1,5 @@
-
+import functools
+print = functools.partial(print, flush=True)
 import numpy as np
 import nltk  # For tokenize
 from tqdm import tqdm  # Progress bar
@@ -84,14 +85,19 @@ class TextData:
         # Create the batch tensor
         for i in range(batchSize):
             # Unpack the sample
-            sen_ids, charge_list, raw_sentence = samples[i]
+            sen_ids, charge_list, law, toi, raw_sentence = samples[i]
 
             if len(sen_ids) > args['maxLengthEnco']:
                 sen_ids = sen_ids[:args['maxLengthEnco']]
 
             batch.encoderSeqs.append(sen_ids)
             batch.encoder_lens.append(len(batch.encoderSeqs[i]))
-            batch.label.append(charge_list)
+            if args['task'] == 'charge':
+                batch.label.append(charge_list)
+            elif args['task'] == 'law':
+                batch.label.append(law)
+            elif args['task'] == 'toi':
+                batch.label.append(toi)
 
         maxlen_enc = max(batch.encoder_lens)
         maxlen_charge = max([len(c) for c in batch.label]) + 1
@@ -100,7 +106,8 @@ class TextData:
 
         for i in range(batchSize):
             batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['PAD']] * (maxlen_enc - len(batch.encoderSeqs[i]))
-            batch.label[i] = batch.label[i] + [args['chargenum']] + [args['chargenum']+1] * (maxlen_charge -1 - len(batch.label[i]))
+            if args['task'] in ['charge', 'law']:
+                batch.label[i] = batch.label[i] + [args['chargenum']] + [args['chargenum']+1] * (maxlen_charge -1 - len(batch.label[i]))
 
         return batch
 
@@ -155,6 +162,55 @@ class TextData:
         """
         return len(self.lawinfo['c2i'])
 
+    def getLawNum(self):
+        """Return the number of words present in the dataset
+        Return:
+            int: Number of word on the loader corpus
+        """
+        return len(self.lawinfo['law2i'])
+
+    def GetTermImprisonment(self, toi):
+        '''
+        :param toi: {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
+        :return:
+        '''
+        map_list = {
+            0: "死刑或无期",
+            1: "十年以上",
+            2: "七到十年",
+            3: "五到七年",
+            4: "三到五年",
+            5: "二到三年",
+            6: "一到二年",
+            7: "九到十二个月",
+            8: "六到九个月",
+            9: "零到六个月",
+            10: "没事"
+        }
+        if toi['life_imprisonment'] or toi['death_penalty']:
+            return 0
+        elif toi['imprisonment'] >= 120:
+            return 1
+        elif 84 <= toi['imprisonment'] < 120:
+            return 2
+        elif 60 <= toi['imprisonment'] < 84:
+            return 3
+        elif 36 <= toi['imprisonment'] < 60:
+            return 4
+        elif 24 <= toi['imprisonment'] < 36:
+            return 5
+        elif 12 <= toi['imprisonment'] < 24:
+            return 6
+        elif 9 <= toi['imprisonment'] < 12:
+            return 7
+        elif 6 <= toi['imprisonment'] < 9:
+            return 8
+        elif 0 < toi['imprisonment'] < 6:
+            return 9
+        elif toi['imprisonment'] == 0 :
+            return 10
+
+
     def loadCorpus_CAIL(self):
         """Load/create the conversations data
         """
@@ -186,6 +242,7 @@ class TextData:
                 charge2index = {c: i for i, c in enumerate(lines)}
 
             law_related_info['c2i'] = charge2index
+            charge2num = {c:0 for c,i in charge2index.items()}
 
 
             with open('./law.txt', 'r') as rh:
@@ -194,6 +251,7 @@ class TextData:
                 law2index = {c: i for i, c in enumerate(lines)}
 
             law_related_info['law2i'] = law2index
+            law2num = {c:0 for c,i in law2index.items()}
 
             ################################################################
 
@@ -210,13 +268,20 @@ class TextData:
                     term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
                     punish_of_money = cases['meta']['punish_of_money'] # int 1000
 
+                    if len(accusation) >1 or len(law_article) > 1 or len(criminals) > 1:
+                        continue
+
                     fact_text = self.tokenizer(fact_text)
-                    # sentences.append(fact_text)
-                    #
-
                     total_words.extend(fact_text)
+                    dataset['train'].append((fact_text, accusation, law_article, self.GetTermImprisonment(term_of_imprisonment)))
+                    charge2num[accusation[0]] += 1
+                    law2num[law_article[0]] += 1
 
-                    dataset['train'].append((fact_text, accusation))
+            high_freq_charges = [c for c,n in charge2num.items() if n >100]
+            high_freq_laws = [c for c,n in law2num.items() if n >100]
+            law_related_info['c2i'] = {c:i for i,c in enumerate(high_freq_charges)}
+            law_related_info['law2i'] = {c:i for i,c in enumerate(high_freq_laws)}
+            dataset['train'] = [it for it in dataset['train'] if it[1][0] in law_related_info['c2i'] and it[2][0] in law_related_info['law2i']]
 
             with open(self.corpus_file_test, 'r') as rhandle:
                 lines = rhandle.readlines()
@@ -232,11 +297,14 @@ class TextData:
                     term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
                     punish_of_money = cases['meta']['punish_of_money'] # int 1000
 
+                    if len(accusation) >1 or len(law_article) > 1 or len(criminals) > 1:
+                        continue
+                    if accusation[0] not in law_related_info['c2i'] or law_article[0] not in law_related_info['law2i']:
+                        continue
+
                     fact_text = self.tokenizer(fact_text)
-
                     total_words.extend(fact_text)
-
-                    dataset['test'].append((fact_text, accusation))
+                    dataset['test'].append((fact_text, accusation, law_article, self.GetTermImprisonment(term_of_imprisonment)))
 
             # with open(args['rootDir'] + '/datadump.tmp', 'rb') as handle:
             #     dataset = pickle.load(handle)
@@ -277,7 +345,7 @@ class TextData:
 
             # self.raw_sentences = copy.deepcopy(dataset)
             for setname in ['train', 'test']:
-                dataset[setname] = [(self.TurnWordID(sen), [charge2index[c] for c in charge], sen) for sen, charge in tqdm(dataset[setname])]
+                dataset[setname] = [(self.TurnWordID(sen), [charge2index[c] for c in charge], [law2index[c] for c in law],toi, sen) for sen, charge,law, toi in tqdm(dataset[setname])]
             # Saving
             print('Saving dataset...')
             self.saveDataset(self.data_dump_path, dataset, law_related_info)  # Saving tf samples

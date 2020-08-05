@@ -1,6 +1,7 @@
 # Copyright 2020 . All Rights Reserved.
 # Author : Lei Sha
-
+import functools
+print = functools.partial(print, flush=True)
 import argparse
 import os
 
@@ -79,12 +80,27 @@ class Runner:
         elif args['model_arch'] in ['lstmibgan']:
             args['classify_type'] = 'single'
             args['batchSize'] = 64
+        elif args['model_arch'] in ['lstmibgan_law']:
+            args['classify_type'] = 'single'
+            args['batchSize'] = 64
+            args['task'] = 'law'
+        elif args['model_arch'] in ['lstmibgan_toi']:
+            args['classify_type'] = 'single'
+            args['batchSize'] = 64
+            args['task'] = 'toi'
 
         self.textData = TextData('cail')
         self.start_token = self.textData.word2index['START_TOKEN']
         self.end_token = self.textData.word2index['END_TOKEN']
         args['vocabularySize'] = self.textData.getVocabularySize()
-        args['chargenum'] = self.textData.getChargeNum()
+
+        if args['model_arch'] in ['lstmibgan_law']:
+            args['chargenum'] = self.textData.getLawNum()
+        elif args['model_arch'] in ['lstmibgan_toi']:
+            args['chargenum'] = 11
+        else:
+            args['chargenum'] = self.textData.getChargeNum()
+
         print(self.textData.getVocabularySize())
 
         if args['model_arch'] == 'lstm':
@@ -103,8 +119,8 @@ class Runner:
             print('Using LSTM information bottleneck model.')
             self.model = LSTM_IB_Model(self.textData.word2index, self.textData.index2word)
             self.train()
-        elif args['model_arch'] == 'lstmibgan':
-            print('Using LSTM information bottleneck GAN model.')
+        elif args['model_arch'].startswith('lstmibgan'):
+            print('Using LSTM information bottleneck GAN model. Task: ' + args['task'] )
             LM = torch.load(args['rootDir']+'/LM.pkl', map_location=args['device'])
             for param in LM.parameters():
                 param.requires_grad = False

@@ -177,7 +177,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.05 * I_x_z + 0.001*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.05 * I_x_z + 0.005*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
 
     def forward(self, x):
@@ -282,13 +282,13 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             iter += 1
             # print(iter, datetime.datetime.now())
 
-        accuracy = test(textData, G_model, 'test', max_accu)
+        accuracy, MP,MR, F = test(textData, G_model, 'test', max_accu)
         if accuracy > max_accu or max_accu == -1:
             print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
             torch.save([G_model, D_model], model_path)
             max_accu = accuracy
 
-        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid accuracy = ', accuracy, 'max accuracy=',
+        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid accuracy = ', accuracy,MP,MR, F , 'max accuracy=',
               max_accu)
 
     # self.test()
@@ -302,6 +302,10 @@ def test(textData, model, datasetname, max_accuracy):
     dset = []
 
     pppt = False
+    TP_c = np.zeros(args['chargenum'])
+    FP_c = np.zeros(args['chargenum'])
+    FN_c = np.zeros(args['chargenum'])
+    TN_c = np.zeros(args['chargenum'])
     with torch.no_grad():
         for batch in textData.getBatches(datasetname):
             x = {}
@@ -321,6 +325,17 @@ def test(textData, model, datasetname, max_accuracy):
                         print(textData.index2word[w], end='')
 
                 print('sample rate: ', wordsamplerate[0])
+            y = F.one_hot(torch.LongTensor(x['labels'].cpu().numpy()), num_classes=args['chargenum'])  # batch c
+            y = y.bool().numpy()
+            answer = output_labels.cpu().numpy()
+            tp_c = ((answer == True) & (answer == y)).sum(axis=0)  # c
+            fp_c = ((answer == True) & (y == False)).sum(axis=0)  # c
+            fn_c = ((answer == False) & (y == True)).sum(axis=0)  # c
+            tn_c = ((answer == False) & (y == False)).sum(axis=0)  # c
+            TP_c += tp_c
+            FP_c += fp_c
+            FN_c += fn_c
+            TN_c += tn_c
 
             batch_correct = output_labels.cpu().numpy() == x['labels'].cpu().numpy()
             # print(output_labels.size(), torch.LongTensor(batch.label).size())
@@ -332,6 +347,12 @@ def test(textData, model, datasetname, max_accuracy):
                     dset.append((batch.encoderSeqs[ind], x['labels'][ind], output_labels[ind]))
 
     accuracy = right / total
+    P_c = TP_c / (TP_c + FP_c)
+    R_c = TP_c / (TP_c + FN_c)
+    F_c = 2 * P_c * R_c / (P_c + R_c)
+    F_macro = np.nanmean(F_c)
+    MP = np.nanmean(P_c)
+    MR = np.nanmean(R_c)
 
     # if accuracy > max_accuracy:
     #     with open(args['rootDir'] + '/error_case_' + args['model_arch'] + '.txt', 'w') as wh:
@@ -344,4 +365,4 @@ def test(textData, model, datasetname, max_accuracy):
     #             wh.write('\n')
     #     wh.close()
 
-    return accuracy
+    return accuracy, MP, MR, F_macro
