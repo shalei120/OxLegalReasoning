@@ -149,17 +149,19 @@ class TextDataBeer:
         # Create the batch tensor
         for i in range(batchSize):
             # Unpack the sample
-            sen_ids = samples[i][0]
-
-            if len(sen_ids) > args['maxLengthEnco']:
-                sen_ids = sen_ids[:args['maxLengthEnco']]
+            sen_ids = samples[i]
+            try:
+                if len(sen_ids) > args['maxLengthEnco']:
+                    sen_ids = sen_ids[:args['maxLengthEnco']]
+            except:
+                dv=0
 
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']]) 
 
-        print(batch.decoderSeqs)
-        print(batch.decoder_lens)
+        # print(batch.decoderSeqs)
+        # print(batch.decoder_lens)
         maxlen_dec = max(batch.decoder_lens)
         maxlen_dec = min(maxlen_dec, args['maxLengthEnco'])
 
@@ -202,7 +204,7 @@ class TextDataBeer:
                 """ Generator over the mini-batch training samples
                 """
                 for i in range(0, sennum, args['batchSize']):
-                    yield self.datasets[setname][i:min(i + args['batchSize'], sennum)]
+                    yield dataset_sen[i:min(i + args['batchSize'], sennum)]
 
             # TODO: Should replace that by generator (better: by tf.queue)
 
