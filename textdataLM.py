@@ -144,10 +144,8 @@ class TextData:
             def genNextSamples():
                 """ Generator over the mini-batch training samples
                 """
-
                 for i in range(0, datanum, args['batchSize']):
                     yield dataset_sen[i:min(i + args['batchSize'], datanum)]
-
 
             # TODO: Should replace that by generator (better: by tf.queue)
 
