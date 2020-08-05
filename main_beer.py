@@ -1,6 +1,7 @@
 # Copyright 2020 . All Rights Reserved.
 # Author : Lei Sha
-
+import functools
+print = functools.partial(print, flush=True)
 import argparse
 import os
 
