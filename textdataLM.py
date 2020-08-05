@@ -105,7 +105,7 @@ class TextData:
         sen_list = []
         count = 0
         cc=0
-        for sen_ids, charge_list, raw_sentence in doclist:
+        for sen_ids, charge_list, law, toi,raw_sentence in doclist:
             start = 0
             sen_ids = [w for w in sen_ids if w not in ['\r\n']]
             for ind,w in enumerate(sen_ids):
