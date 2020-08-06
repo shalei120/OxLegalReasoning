@@ -179,7 +179,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.05 * I_x_z + 0.001*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.01 * I_x_z + 0.001*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
 
     def forward(self, x):
@@ -284,7 +284,7 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             iter += 1
             # print(iter, datetime.datetime.now())
 
-        MSEloss, total_prec, samplerate = test(textData, G_model, 'test', max_accu)
+        MSEloss, total_prec, samplerate = test(textData, G_model, 'test', max_p)
         if total_prec > max_p or max_p == -1:
             print('total_prec = ', total_prec, '>= max_p(', max_p, '), saving model...')
             torch.save([G_model, D_model], model_path)
@@ -319,9 +319,9 @@ def test(textData, model, datasetname, max_accuracy):
                 pppt = True
                 for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
                     if choice[1] == 1:
-                        print('<',textData.index2word[w],'>', end='')
+                        print('<',textData.index2word[w],'>', end=' ')
                     else:
-                        print(textData.index2word[w], end='')
+                        print(textData.index2word[w], end=' ')
 
                 print('sample rate: ', wordsamplerate[0])
 
@@ -329,11 +329,11 @@ def test(textData, model, datasetname, max_accuracy):
             batch_correct = batch_correct[:, args['aspect']]
             # print(output_labels.size(), torch.LongTensor(batch.label).size())
             # right += sum(batch_correct[:, args['aspect']])
-            MSEloss = (MSEloss * total + batch_correct.sum(dim = 0) ) / (total + x['enc_input'].size()[0])
+            MSEloss = (MSEloss * total + batch_correct.sum(axis = 0) ) / (total + x['enc_input'].size()[0])
 
             seqlen = torch.sign(x['enc_input']).float().sum(dim = 1) # batch
             prec = 0.0
-            for i, b in enumerate(batch):
+            for i, b in enumerate(batch.encoder_lens):
                 right = 0
                 for w, choice in zip(batch.encoderSeqs[i], sampled_words[i]):
                     if choice[1] == 1 and w in batch.rationals[i][args['aspect']]:

@@ -109,11 +109,9 @@ class TextDataBeer:
         """
         if setname not in self.batches:
             self.shuffle()
-            if  args['classify_type'] == 'single':
-                self.datasets[setname] = [d for d in self.datasets[setname] if len(d[1]) == 1]
 
             batches = []
-            print(len(self.datasets[setname]))
+            print(setname, 'size:', len(self.datasets[setname]))
             def genNextSamples():
                 """ Generator over the mini-batch training samples
                 """
@@ -336,7 +334,9 @@ class TextDataBeer:
             self.index2word = data['index2word']
             self.index2vector = data['index2vector']
             datasets = data['datasets']
-
+        print('training: \t', len(datasets['train']))
+        print('dev: \t', len(datasets['dev']))
+        print('testing: \t', len(datasets['test']))
         self.index2word_set = set(self.index2word)
         return  datasets
 
