@@ -91,7 +91,10 @@ class LanguageModel(nn.Module):
         :return:
         '''
         batch_size = decoderInputs.size()[0]
-        dec_len = decoderInputs.size()[1]
+        try:
+            dec_len = decoderInputs.size()[1]
+        except:
+            df=0
         dec_input_embed = self.embedding(decoderInputs)
         # if mask is not None:
         #     dec_input_embed = dec_input_embed * mask.unsqueeze(2)
