@@ -91,7 +91,11 @@ class LanguageModel(nn.Module):
         :return:
         '''
         batch_size = decoderInputs.size()[0]
-        dec_len = decoderInputs.size()[1]
+        try:
+            dec_len = decoderInputs.size()[1]
+        except:
+            print(decoderInputs)
+            decoderInputs.size()[1]
         dec_input_embed = self.embedding(decoderInputs)
         # if mask is not None:
         #     dec_input_embed = dec_input_embed * mask.unsqueeze(2)
@@ -238,7 +242,7 @@ def test(textData, model, datasetname, eps=1e-20):
     ave_loss = 0
     num = 0
     with torch.no_grad():
-        for batch in textData.getBatches(datasetname):
+        for batch in textData.getBatches_forLM(datasetname):
             x = {}
             x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
             x['dec_len'] = batch.decoder_lens

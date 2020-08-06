@@ -150,12 +150,8 @@ class TextDataBeer:
         for i in range(batchSize):
             # Unpack the sample
             sen_ids = samples[i]
-            try:
-                if len(sen_ids) > args['maxLengthEnco']:
-                    sen_ids = sen_ids[:args['maxLengthEnco']]
-            except:
-                dv=0
-
+            if len(sen_ids) > args['maxLengthEnco']:
+                sen_ids = sen_ids[:args['maxLengthEnco']]
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']]) 
