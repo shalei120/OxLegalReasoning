@@ -334,8 +334,10 @@ def test(textData, model, datasetname, max_accuracy):
             y = F.one_hot(torch.LongTensor(x['labels'].cpu().numpy()), num_classes=args['chargenum'])  # batch c
             y = y.bool().numpy()
             answer = output_labels.cpu().numpy()
+            answer = F.one_hot(torch.LongTensor(answer), num_classes=args['chargenum'])  # batch c
+            answer = answer.bool().numpy()
+
             tp_c = ((answer == True) & (answer == y)).sum(axis=0)  # c
-            print(answer.shape, y.shape)
             fp_c = ((answer == True) & (y == False)).sum(axis=0)  # c
             fn_c = ((answer == False) & (y == True)).sum(axis=0)  # c
             tn_c = ((answer == False) & (y == False)).sum(axis=0)  # c
