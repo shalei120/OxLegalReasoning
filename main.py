@@ -39,6 +39,7 @@ from LSTM_GMIB import LSTM_GMIB_Model
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
 parser.add_argument('--modelarch', '-m')
+parser.add_argument('--size', '-s')
 cmdargs = parser.parse_args()
 
 usegpu = True
@@ -54,6 +55,10 @@ if cmdargs.modelarch is None:
 else:
     args['model_arch'] = cmdargs.modelarch
 
+if cmdargs.size is None:
+    args['datasetsize'] = 'big'
+else:
+    args['datasetsize'] = cmdargs.size
 
 def asMinutes(s):
     m = math.floor(s / 60)
