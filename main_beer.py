@@ -3,6 +3,12 @@
 import functools
 print = functools.partial(print, flush=True)
 import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', '-g')
+parser.add_argument('--modelarch', '-m')
+parser.add_argument('--aspect', '-a')
+cmdargs = parser.parse_args()
+
 import os
 
 from textdataBeer import TextDataBeer
@@ -26,11 +32,7 @@ from LanguageModel import LanguageModel
 
 import LSTM_IB_GAN_beer
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', '-g')
-parser.add_argument('--modelarch', '-m')
-parser.add_argument('--aspect', '-a')
-cmdargs = parser.parse_args()
+
 
 usegpu = True
 
