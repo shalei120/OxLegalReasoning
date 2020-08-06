@@ -1,14 +1,34 @@
 # Copyright 2020 . All Rights Reserved.
 # Author : Lei Sha
-import functools
-print = functools.partial(print, flush=True)
+
+from Hyperparameters import args
 import argparse
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
 parser.add_argument('--modelarch', '-m')
 parser.add_argument('--aspect', '-a')
 cmdargs = parser.parse_args()
+print(cmdargs)
+usegpu = True
+if cmdargs.gpu is None:
+    usegpu = False
+else:
+    usegpu = True
+    args['device'] = 'cuda:' + str(cmdargs.gpu)
 
+if cmdargs.modelarch is None:
+    args['model_arch'] = 'lstm'
+else:
+    args['model_arch'] = cmdargs.modelarch
+
+if cmdargs.aspect is None:
+    args['aspect'] = 0
+else:
+    args['aspect'] = cmdargs.aspect
+
+import functools
+print = functools.partial(print, flush=True)
 import os
 
 from textdataBeer import TextDataBeer
@@ -27,31 +47,11 @@ from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 # import matplotlib.pyplot as plt
 import numpy as np
 import copy
-from Hyperparameters import args
-from LanguageModel import LanguageModel
+from LanguageModel_beer import LanguageModel
 
 import LSTM_IB_GAN_beer
 
-
-
-usegpu = True
-
-if cmdargs.gpu is None:
-    usegpu = False
-else:
-    usegpu = True
-    args['device'] = 'cuda:' + str(cmdargs.gpu)
-
-if cmdargs.modelarch is None:
-    args['model_arch'] = 'lstm'
-else:
-    args['model_arch'] = cmdargs.modelarch
-
-if cmdargs.aspect is None:
-    args['aspect'] = 0
-else:
-    args['aspect'] = cmdargs.aspect
-
+print(args)
 
 def asMinutes(s):
     m = math.floor(s / 60)

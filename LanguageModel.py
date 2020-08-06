@@ -15,16 +15,6 @@ import copy,math
 from utils import *
 
 from textdataLM import TextData
-parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', '-g')
-parser.add_argument('--modelarch', '-m')
-cmdargs = parser.parse_args()
-usegpu = True
-if cmdargs.gpu is None:
-    usegpu = False
-else:
-    usegpu = True
-    args['device'] = 'cuda:' + str(cmdargs.gpu)
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -247,9 +237,20 @@ def test(textData, model, datasetname, eps=1e-20):
 
     return torch.exp(ave_loss)
 
-
+def parseargs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gpu', '-g')
+    parser.add_argument('--modelarch', '-m')
+    cmdargs = parser.parse_args()
+    usegpu = True
+    if cmdargs.gpu is None:
+        usegpu = False
+    else:
+        usegpu = True
+        args['device'] = 'cuda:' + str(cmdargs.gpu)
 
 if __name__ == '__main__':
+    parseargs()
     args['batchSize'] = 256
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
