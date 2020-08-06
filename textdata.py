@@ -214,15 +214,18 @@ class TextData:
     def loadCorpus_CAIL(self):
         """Load/create the conversations data
         """
-        self.basedir = '../Legal/final_all_data/first_stage/'
-        self.corpus_file_train = self.basedir + 'train.json'
-        self.corpus_file_test =  self.basedir + 'test.json'
-
-        # self.basedir = '../Legal/final_all_data/exercise_contest/'
-        # self.corpus_file_train = self.basedir + 'data_train.json'
-        # self.corpus_file_test =  self.basedir + 'data_test.json'
-
-        self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
+        if args['datasetsize'] == 'big':
+            self.basedir = '../Legal/final_all_data/first_stage/'
+            self.corpus_file_train = self.basedir + 'train.json'
+            self.corpus_file_test =  self.basedir + 'test.json'
+            self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
+            self.vocfile = args['rootDir'] + '/voc_big.txt'
+        elif args['datasetsize'] == 'small':
+            self.basedir = '../Legal/final_all_data/exercise_contest/'
+            self.corpus_file_train = self.basedir + 'data_train.json'
+            self.corpus_file_test =  self.basedir + 'data_test.json'
+            self.data_dump_path = args['rootDir'] + '/CAILdata_small.pkl'
+            self.vocfile = args['rootDir'] + '/voc_small.txt'
 
         print(self.data_dump_path)
         datasetExist = os.path.isfile(self.data_dump_path)
@@ -270,12 +273,19 @@ class TextData:
 
                     if len(accusation) >1 or len(law_article) > 1 or len(criminals) > 1:
                         continue
-
+                    if args['datasetsize'] == 'small':
+                        law_article = [str(l) for l in law_article]
                     fact_text = self.tokenizer(fact_text)
                     total_words.extend(fact_text)
                     dataset['train'].append((fact_text, accusation, law_article, self.GetTermImprisonment(term_of_imprisonment)))
-                    charge2num[accusation[0]] += 1
-                    law2num[law_article[0]] += 1
+
+                    try:
+                        charge2num[accusation[0]] += 1
+                    except:
+                        accusation[0] = accusation[0].replace('[','').replace(']','')
+                        charge2num[accusation[0]] += 1
+
+                    law2num[str(law_article[0])] += 1
 
             high_freq_charges = [c for c,n in charge2num.items() if n >100]
             high_freq_laws = [c for c,n in law2num.items() if n >100]
@@ -299,6 +309,8 @@ class TextData:
 
                     if len(accusation) >1 or len(law_article) > 1 or len(criminals) > 1:
                         continue
+                    if args['datasetsize'] == 'small':
+                        law_article = [str(l) for l in law_article]
                     if accusation[0] not in law_related_info['c2i'] or law_article[0] not in law_related_info['law2i']:
                         continue
 
@@ -323,7 +335,7 @@ class TextData:
             print('sort_count: ', len(sort_count))
 
             # nnn=8
-            with open(self.basedir + "/voc.txt", "w") as v:
+            with open(self.vocfile, "w") as v:
                 for w, c in tqdm(sort_count):
                     # if nnn > 0:
                     #     print([(ord(w1),w1) for w1 in w])
@@ -336,7 +348,7 @@ class TextData:
 
                 v.close()
 
-            self.word2index = self.read_word2vec(self.basedir + '/voc.txt')
+            self.word2index = self.read_word2vec(self.vocfile)
             sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
             print('sorted')
             self.index2word = [w for w, n in sorted_word_index]
@@ -351,6 +363,8 @@ class TextData:
             self.saveDataset(self.data_dump_path, dataset, law_related_info)  # Saving tf samples
         else:
             dataset, law_related_info = self.loadDataset(self.data_dump_path)
+            print('train size:\t', len(dataset['train']))
+            print('test size:\t', len(dataset['test']))
             print('loaded')
 
         return  dataset, law_related_info
