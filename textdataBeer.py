@@ -109,11 +109,9 @@ class TextDataBeer:
         """
         if setname not in self.batches:
             self.shuffle()
-            if  args['classify_type'] == 'single':
-                self.datasets[setname] = [d for d in self.datasets[setname] if len(d[1]) == 1]
 
             batches = []
-            print(len(self.datasets[setname]))
+            print(setname, 'size:', len(self.datasets[setname]))
             def genNextSamples():
                 """ Generator over the mini-batch training samples
                 """
@@ -150,12 +148,8 @@ class TextDataBeer:
         for i in range(batchSize):
             # Unpack the sample
             sen_ids = samples[i]
-            try:
-                if len(sen_ids) > args['maxLengthEnco']:
-                    sen_ids = sen_ids[:args['maxLengthEnco']]
-            except:
-                dv=0
-
+            if len(sen_ids) > args['maxLengthEnco']:
+                sen_ids = sen_ids[:args['maxLengthEnco']]
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']]) 
@@ -340,7 +334,9 @@ class TextDataBeer:
             self.index2word = data['index2word']
             self.index2vector = data['index2vector']
             datasets = data['datasets']
-
+        print('training: \t', len(datasets['train']))
+        print('dev: \t', len(datasets['dev']))
+        print('testing: \t', len(datasets['test']))
         self.index2word_set = set(self.index2word)
         return  datasets
 

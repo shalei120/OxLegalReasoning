@@ -25,7 +25,7 @@ else:
 if cmdargs.aspect is None:
     args['aspect'] = 0
 else:
-    args['aspect'] = cmdargs.aspect
+    args['aspect'] = int(cmdargs.aspect)
 
 import functools
 print = functools.partial(print, flush=True)
@@ -83,11 +83,11 @@ class Runner:
         args['vocabularySize'] = self.textData.getVocabularySize()
         args['chargenum'] = 5
         print(self.textData.getVocabularySize())
-        args['model_arch'] = 'lstmibgan'
-        args['aspect'] = 0
+        # args['model_arch'] = 'lstmibgan'
+        # args['aspect'] = 0
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
-            LM = torch.load(args['rootDir']+'/LM_beer.pkl', map_location=args['device'])
+            LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
             for param in LM.parameters():
                 param.requires_grad = False
 

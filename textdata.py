@@ -100,7 +100,8 @@ class TextData:
                 batch.label.append(toi)
 
         maxlen_enc = max(batch.encoder_lens)
-        maxlen_charge = max([len(c) for c in batch.label]) + 1
+        if args['task'] in ['charge', 'law']:
+            maxlen_charge = max([len(c) for c in batch.label]) + 1
         # args['chargenum']      eos
         # args['chargenum'] + 1  padding
 
@@ -357,7 +358,7 @@ class TextData:
 
             # self.raw_sentences = copy.deepcopy(dataset)
             for setname in ['train', 'test']:
-                dataset[setname] = [(self.TurnWordID(sen), [charge2index[c] for c in charge], [law2index[c] for c in law],toi, sen) for sen, charge,law, toi in tqdm(dataset[setname])]
+                dataset[setname] = [(self.TurnWordID(sen), [law_related_info['c2i'][c] for c in charge], [law_related_info['law2i'][c] for c in law],toi, sen) for sen, charge,law, toi in tqdm(dataset[setname])]
             # Saving
             print('Saving dataset...')
             self.saveDataset(self.data_dump_path, dataset, law_related_info)  # Saving tf samples
