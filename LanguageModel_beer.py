@@ -17,16 +17,6 @@ import copy,math
 from utils import *
 
 from textdataBeer import TextDataBeer
-parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', '-g')
-parser.add_argument('--modelarch', '-m')
-cmdargs = parser.parse_args()
-usegpu = True
-if cmdargs.gpu is None:
-    usegpu = False
-else:
-    usegpu = True
-    args['device'] = 'cuda:' + str(cmdargs.gpu)
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -91,11 +81,7 @@ class LanguageModel(nn.Module):
         :return:
         '''
         batch_size = decoderInputs.size()[0]
-        try:
-            dec_len = decoderInputs.size()[1]
-        except:
-            print(decoderInputs)
-            decoderInputs.size()[1]
+        dec_len = decoderInputs.size()[1]
         dec_input_embed = self.embedding(decoderInputs)
         # if mask is not None:
         #     dec_input_embed = dec_input_embed * mask.unsqueeze(2)
@@ -253,9 +239,20 @@ def test(textData, model, datasetname, eps=1e-20):
 
     return torch.exp(ave_loss)
 
-
+def parseargs():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gpu', '-g')
+    parser.add_argument('--modelarch', '-m')
+    cmdargs = parser.parse_args()
+    usegpu = True
+    if cmdargs.gpu is None:
+        usegpu = False
+    else:
+        usegpu = True
+        args['device'] = 'cuda:' + str(cmdargs.gpu)
 
 if __name__ == '__main__':
+    parseargs()
     args['batchSize'] = 256
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
