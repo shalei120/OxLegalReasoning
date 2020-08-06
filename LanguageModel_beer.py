@@ -228,7 +228,7 @@ def test(textData, model, datasetname, eps=1e-20):
     ave_loss = 0
     num = 0
     with torch.no_grad():
-        for batch in textData.getBatches(datasetname):
+        for batch in textData.getBatches_forLM(datasetname):
             x = {}
             x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
             x['dec_len'] = batch.decoder_lens

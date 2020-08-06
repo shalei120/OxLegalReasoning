@@ -83,8 +83,8 @@ class Runner:
         args['vocabularySize'] = self.textData.getVocabularySize()
         args['chargenum'] = 5
         print(self.textData.getVocabularySize())
-        args['model_arch'] = 'lstmibgan'
-        args['aspect'] = 0
+        # args['model_arch'] = 'lstmibgan'
+        # args['aspect'] = 0
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
             LM = torch.load(args['rootDir']+'/LM_beer.pkl', map_location=args['device'])
