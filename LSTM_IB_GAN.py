@@ -141,8 +141,11 @@ class LSTM_IB_GAN_Model(nn.Module):
         output_all = self.ChargeClassifier(z_nero_best).to(args['device'])  # batch chargenum
         recon_loss_all = self.NLLloss(output_all, self.classifyLabels).to(args['device'])
         recon_loss_mean_all = torch.mean(recon_loss_all).to(args['device'])
-
-        en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
+        try:
+            en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
+        except:
+            print(self.encoderInputs, self.encoderInputs.size(), self.encoder_lengths)
+            en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         # print(en_outputs.size())
         z_logit = self.x_2_prob_z(en_outputs_select.to(args['device']))  # batch seq 2
 
@@ -238,7 +241,8 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = batch.encoder_lens
             x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
-            x['labels'] = x['labels'][:, 0]
+            if args['model_arch'] in ['lstmibgan', 'lstmibgan_law']:
+                x['labels'] = x['labels'][:, 0]
 
             Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
             Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
@@ -331,6 +335,7 @@ def test(textData, model, datasetname, max_accuracy):
             y = y.bool().numpy()
             answer = output_labels.cpu().numpy()
             tp_c = ((answer == True) & (answer == y)).sum(axis=0)  # c
+            print(answer.shape, y.shape)
             fp_c = ((answer == True) & (y == False)).sum(axis=0)  # c
             fn_c = ((answer == False) & (y == True)).sum(axis=0)  # c
             tn_c = ((answer == False) & (y == False)).sum(axis=0)  # c
