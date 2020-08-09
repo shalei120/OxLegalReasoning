@@ -70,6 +70,7 @@ class LSTM_att_Model(nn.Module):
 
         en_output, en_state = self.encoder(self.encoderInputs, self.encoder_lengths)
 
+
         en_hidden, en_cell = en_state   #2 batch hid
         en_hidden = en_hidden.transpose(0,1)
         en_hidden = en_hidden.reshape(self.batch_size,args['hiddenSize'] * 2)

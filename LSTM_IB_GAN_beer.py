@@ -38,6 +38,8 @@ class Discriminator(nn.Module):
         self.disc = nn.Sequential(
             nn.Linear(args['hiddenSize'], args['hiddenSize']),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(args['hiddenSize'], 1),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.Sigmoid(),
         ).to(args['device'])
 
@@ -76,7 +78,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.NLLloss = torch.nn.NLLLoss(reduction='none')
         self.CEloss = torch.nn.CrossEntropyLoss(reduction='none')
 
-        self.embedding = nn.Embedding(args['vocabularySize'], args['embeddingSize']).to(args['device'])
+        self.embedding = LM.embedding
 
         self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
         self.encoder_select = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
@@ -94,6 +96,7 @@ class LSTM_IB_GAN_Model(nn.Module):
             nn.Linear(args['hiddenSize'], args['chargenum']),
             nn.Sigmoid()
         ).to(args['device'])
+        # self.dropout = nn.Dropout(0.05)
 
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -118,7 +121,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         y_hard = (y_hard - y).detach() + y
         return y_hard, y
 
-    def build(self, x, eps=0.000001):
+    def build(self, x, eps=1e-6):
         '''
         :param encoderInputs: [batch, enc_len]
         :param decoderInputs: [batch, dec_len]
@@ -138,9 +141,11 @@ class LSTM_IB_GAN_Model(nn.Module):
         en_outputs, en_state = self.encoder_all(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         z_nero_best = self.z_to_fea(en_outputs)
         z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
+
+        # z_nero_best = self.dropout(z_nero_best)
         output_all = self.review_scorer(z_nero_best)  # batch 5
         recon_loss_all = (output_all - self.scores) ** 2
-        recon_loss_mean_all = torch.mean(recon_loss_all[:, args['aspect']])
+        recon_loss_mean_all = recon_loss_all[:, args['aspect']]
 
         en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         # print(en_outputs.size())
@@ -162,37 +167,41 @@ class LSTM_IB_GAN_Model(nn.Module):
         s_w_feature = self.z_to_fea(en_outputs_masked)
         z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
 
-        z_prob = self.softmax(z_logit)
-        I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps))
+        z_prob = self.softmax(z_logit) # batch seq 2
+        I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1)
+        print(sampled_seq[0,:,:], torch.log(z_prob+eps)[0,:,:])
+        logpz = - torch.sum(sampled_seq * torch.log(z_prob+eps), dim = 2)
+        logpz = logpz.sum(dim = 1)
+
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
         # omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
         omega = self.LM.LMloss(sampled_seq_soft[:,:,1],sampled_seq[:, :, 1], self.encoderInputs)
-        omega = torch.mean(omega)
-
+        # omega = torch.mean(omega)
+        # z_nero_sampled = self.dropout(z_nero_sampled)
         output = self.review_scorer(z_nero_sampled)  # batch aspectnum
         recon_loss = (output - self.scores)**2
-        recon_loss_mean = torch.mean(recon_loss[:, args['aspect']])
+        recon_loss_mean = recon_loss[:, args['aspect']]
 
-        tt = torch.stack([recon_loss_mean, recon_loss_mean_all, I_x_z, omega])
+        tt = torch.stack([recon_loss_mean.mean(), recon_loss_mean_all.mean(), I_x_z.mean(), omega.mean()])
         wordnum = torch.sum(mask, dim=1)
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
-
-        return recon_loss_mean + recon_loss_mean_all + 0.001 * I_x_z + 0.001*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+#+ 0.0001 * I_x_z + 0.001*omega
+        return 10*recon_loss_mean , 10*recon_loss_mean_all , z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
 
 
     def forward(self, x):
-        losses, z_nero_best, z_nero_sampled, _, _,_,tt = self.build(x)
-        return losses, z_nero_best, z_nero_sampled, tt
+        losses,best_loss, z_nero_best, z_nero_sampled, _, _,_,pz, tt = self.build(x)
+        return losses,best_loss, z_nero_best, z_nero_sampled,pz, tt
 
     def predict(self, x):
-        _, _, _, output,sampled_words, wordsamplerate, _ = self.build(x)
+        _, _, _, _, output,sampled_words, wordsamplerate,_, _ = self.build(x)
         return output, ( sampled_words, wordsamplerate)
 
 
 def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
-          learning_rate=0.001, n_critic=5):
+          learning_rate=0.001, n_critic=5, eps = 1e-6):
     start = time.time()
     plot_losses = []
     print_Gloss_total = 0  # Reset every print_every
@@ -240,8 +249,8 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
 
 
-            Gloss_pure, z_nero_best, z_nero_sampled, tt = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
+            Gloss_pure, Gloss_best, z_nero_best, z_nero_sampled,logpz, tt = G_model(x)  # batch seq_len outsize
+            Dloss = -torch.mean(torch.log(D_model(z_nero_best)+eps)) + torch.mean(torch.log(D_model(z_nero_sampled.detach())+eps))
 
             Dloss.backward(retain_graph=True)
 
@@ -254,7 +263,9 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             #  Train Generator
             # -----------------
             G_optimizer.zero_grad()
-            Gloss = Gloss_pure - torch.mean(torch.log(D_model(z_nero_sampled)))
+            # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size())
+            # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
+            Gloss = torch.mean(Gloss_best + (Gloss_pure - torch.log(D_model(z_nero_sampled)+eps))* logpz)
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
 
@@ -290,7 +301,7 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             torch.save([G_model, D_model], model_path)
             max_p = total_prec
 
-        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid  = ', MSEloss, total_prec, samplerate, 'max prec=',
+        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), sum(Dlosses) / len(Dlosses), 'Valid  mseloss= ', MSEloss, 'prec=',total_prec, 'sample=',samplerate, 'max prec=',
               max_p)
 
     # self.test()

@@ -10,4 +10,4 @@ module load cuda/9.2
 #nvidia-smi
 echo $PWD
 # run the application
-python3 main_beer.py -m lstmibgan -a 0
+python3 main_beer.py -m lstmibgan -a 0 > slurm-beermodel-$SLURM_JOB_ID.out

@@ -1,3 +1,5 @@
+import functools
+print = functools.partial(print, flush=True)
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
@@ -240,7 +242,7 @@ def test(textData, model, datasetname, eps=1e-20):
 def parseargs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', '-g')
-    parser.add_argument('--modelarch', '-m')
+    parser.add_argument('--size', '-s')
     cmdargs = parser.parse_args()
     usegpu = True
     if cmdargs.gpu is None:
@@ -248,6 +250,11 @@ def parseargs():
     else:
         usegpu = True
         args['device'] = 'cuda:' + str(cmdargs.gpu)
+
+    if cmdargs.size is None:
+        args['tasksize'] = 'big'
+    else:
+        args['tasksize'] = cmdargs.size
 
 if __name__ == '__main__':
     parseargs()
@@ -259,4 +266,4 @@ if __name__ == '__main__':
     args['vocabularySize'] = textData.getVocabularySize()
     args['chargenum'] = textData.getChargeNum()
     model = LanguageModel(textData.word2index, textData.index2word).to(args['device'])
-    train(textData, model, model_path = args['rootDir']+'/LM.pkl')
+    train(textData, model, model_path = args['rootDir']+'/LM'+args['tasksize']+'.pkl')
