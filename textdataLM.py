@@ -1,4 +1,3 @@
-
 import numpy as np
 import nltk  # For tokenize
 from tqdm import tqdm  # Progress bar
@@ -11,9 +10,12 @@ from nltk.tokenize import word_tokenize
 import jieba
 import json
 from Hyperparameters import args
+
+
 class Batch:
     """Struct containing batches info
     """
+
     def __init__(self):
         self.decoderSeqs = []
         self.targetSeqs = []
@@ -24,7 +26,6 @@ class TextData:
     """Dataset class
     Warning: No vocabulary limit
     """
-
 
     def __init__(self, corpusname):
         """Load all conversations
@@ -42,7 +43,7 @@ class TextData:
 
         self.datasets, self.lawinfo = self.loadCorpus_CAIL()
 
-        self.lawinfo['i2c'] = {i:c for c,i in self.lawinfo['c2i'].items() }
+        self.lawinfo['i2c'] = {i: c for c, i in self.lawinfo['c2i'].items()}
         print(self.lawinfo['i2c'])
 
         print('set')
@@ -56,7 +57,6 @@ class TextData:
 
     def _printStats(self, corpusname):
         print('Loaded {}: {} words, {} QA'.format(corpusname, len(self.word2index), len(self.trainingSamples)))
-
 
     def shuffle(self):
         """Shuffle the training samples
@@ -81,11 +81,11 @@ class TextData:
         # Create the batch tensor
         for i in range(batchSize):
             # Unpack the sample
-            sen_ids= samples[i]
+            sen_ids = samples[i]
 
             if len(sen_ids) > args['maxLengthEnco']:
                 sen_ids = sen_ids[:args['maxLengthEnco']]
-                
+
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']])
@@ -93,43 +93,42 @@ class TextData:
         maxlen_dec = max(batch.decoder_lens)
         maxlen_dec = min(maxlen_dec, args['maxLengthEnco'])
 
-
         for i in range(batchSize):
-            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['PAD']] * (maxlen_dec - len(batch.decoderSeqs[i]))
-            batch.targetSeqs[i] = batch.targetSeqs[i] + [self.word2index['PAD']] * (maxlen_dec - len(batch.targetSeqs[i]))
+            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['PAD']] * (
+                        maxlen_dec - len(batch.decoderSeqs[i]))
+            batch.targetSeqs[i] = batch.targetSeqs[i] + [self.word2index['PAD']] * (
+                        maxlen_dec - len(batch.targetSeqs[i]))
 
         return batch
 
     def paragraph2sentence(self, doclist):
-        split_tokens = [self.word2index['。'],self.word2index['；'],self.word2index['，']]
+        split_tokens = [self.word2index['。'], self.word2index['；'], self.word2index['，']]
         sen_list = []
         count = 0
-        cc=0
-        for sen_ids, charge_list, law, toi,raw_sentence in doclist:
+        cc = 0
+        for sen_ids, charge_list, law, toi, raw_sentence in doclist:
             start = 0
             sen_ids = [w for w in sen_ids if w not in ['\r\n']]
-            for ind,w in enumerate(sen_ids):
+            for ind, w in enumerate(sen_ids):
                 if w in split_tokens:
-                    if 8 < ind-start < 500 :
-                        sen_list.append(sen_ids[start:ind+1])
+                    if 8 < ind - start < 500:
+                        sen_list.append(sen_ids[start:ind + 1])
                     # if len(sen_list[-1]) > 500:
                     #     print(raw_sentence[start:ind+1])
                     #     print(sen_list[-1])
                     #     count += 1
                     # if len(sen_list[-1]) <10:
                     #     cc += 1
-                    start = ind+1
+                    start = ind + 1
 
-            if start < len(sen_ids)-1:
+            if start < len(sen_ids) - 1:
                 sen_list.append(sen_ids[start:])
 
         # print(len(sen_list),count,cc)
         # exit(0)
         return sen_list
 
-
-
-    def getBatches(self, setname = 'train'):
+    def getBatches(self, setname='train'):
         """Prepare the batches for the current epoch
         Return:
             list<Batch>: Get a list of the batches for the next epoch
@@ -141,6 +140,7 @@ class TextData:
             dataset_sen = self.paragraph2sentence(self.datasets[setname])
             datanum = len(dataset_sen)
             print(datanum)
+
             def genNextSamples():
                 """ Generator over the mini-batch training samples
                 """
@@ -159,7 +159,6 @@ class TextData:
         # print([self.index2word[id] for id in batches[2].encoderSeqs[5]], batches[2].raws[5])
         return self.batches[setname]
 
-
     def getVocabularySize(self):
         """Return the number of words present in the dataset
         Return:
@@ -177,134 +176,24 @@ class TextData:
     def loadCorpus_CAIL(self):
         """Load/create the conversations data
         """
-        self.basedir = '../Legal/final_all_data/first_stage/'
-        self.corpus_file_train = self.basedir + 'train.json'
-        self.corpus_file_test =  self.basedir + 'test.json'
+        if args['tasksize'] == 'big':
+            self.basedir = '../Legal/final_all_data/first_stage/'
+            self.corpus_file_train = self.basedir + 'train.json'
+            self.corpus_file_test = self.basedir + 'test.json'
+            self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
+        elif args['tasksize'] == 'small':
+            self.basedir = '../Legal/final_all_data/exercise_contest/'
+            self.corpus_file_train = self.basedir + 'data_train.json'
+            self.corpus_file_test = self.basedir + 'data_test.json'
 
-        # self.basedir = '../Legal/final_all_data/exercise_contest/'
-        # self.corpus_file_train = self.basedir + 'data_train.json'
-        # self.corpus_file_test =  self.basedir + 'data_test.json'
-
-        self.data_dump_path = args['rootDir'] + '/CAILdata.pkl'
+            self.data_dump_path = args['rootDir'] + '/CAILdata_small.pkl'
 
         print(self.data_dump_path)
-        datasetExist = os.path.isfile(self.data_dump_path)
 
-        if not datasetExist:  # First time we load the database: creating all files
-            print('Training data not found. Creating dataset...')
+        dataset, law_related_info = self.loadDataset(self.data_dump_path)
+        print('loaded')
 
-            total_words = []
-            dataset = {'train': [], 'test':[]}
-
-            ################################################################
-            # charge names
-            law_related_info = {}
-            with open('./accu.txt', 'r') as rh:
-                lines = rh.readlines()
-                lines = [line.strip() for line in lines]
-                charge2index = {c: i for i, c in enumerate(lines)}
-
-            law_related_info['c2i'] = charge2index
-
-
-            with open('./law.txt', 'r') as rh:
-                lines = rh.readlines()
-                lines = [line.strip() for line in lines]
-                law2index = {c: i for i, c in enumerate(lines)}
-
-            law_related_info['law2i'] = law2index
-
-            ################################################################
-
-            with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
-                lines = rhandle.readlines()
-
-                # sentences = []
-                for line in tqdm(lines):
-                    cases = json.loads(line)
-                    fact_text = cases['fact']       # str
-                    law_article = cases['meta']['relevant_articles']  # ['23','34']
-                    accusation = cases['meta']['accusation']   # ['steal']
-                    criminals =  cases['meta']['criminals']    # ['jack']
-                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
-
-                    fact_text = self.tokenizer(fact_text)
-                    # sentences.append(fact_text)
-                    #
-
-                    total_words.extend(fact_text)
-
-                    dataset['train'].append((fact_text, accusation))
-
-            with open(self.corpus_file_test, 'r') as rhandle:
-                lines = rhandle.readlines()
-                # sentences = []
-                # charges = []
-                for line in tqdm(lines):
-                    cases = json.loads(line)
-
-                    fact_text = cases['fact']       # str
-                    law_article = cases['meta']['relevant_articles']  # ['23','34']
-                    accusation = cases['meta']['accusation']   # ['steal']
-                    criminals =  cases['meta']['criminals']    # ['jack']
-                    term_of_imprisonment = cases['meta']['term_of_imprisonment']   # {'life_imprisonment': False, 'death_penalty': False, 'imprisonment': 4}
-                    punish_of_money = cases['meta']['punish_of_money'] # int 1000
-
-                    fact_text = self.tokenizer(fact_text)
-
-                    total_words.extend(fact_text)
-
-                    dataset['test'].append((fact_text, accusation))
-
-            # with open(args['rootDir'] + '/datadump.tmp', 'rb') as handle:
-            #     dataset = pickle.load(handle)
-            #     print('tmp loaded')
-            #     for ft, ac in tqdm(dataset['train']):
-            #         total_words.extend(ft)
-
-            print(len(dataset['train']), len(dataset['test']))
-
-            # with open(args['rootDir'] + '/datadump.tmp', 'wb') as handle:
-            #     pickle.dump(dataset, handle, -1)
-            #     print('tmp stored')
-
-            fdist = nltk.FreqDist(total_words)
-            sort_count = fdist.most_common(30000)
-            print('sort_count: ', len(sort_count))
-
-            # nnn=8
-            with open(self.basedir + "/voc.txt", "w") as v:
-                for w, c in tqdm(sort_count):
-                    # if nnn > 0:
-                    #     print([(ord(w1),w1) for w1 in w])
-                    #     nnn-= 1
-                    if w not in [' ', '', '\n', '\r', '\r\n']:
-                        v.write(w)
-                        v.write(' ')
-                        v.write(str(c))
-                        v.write('\n')
-
-                v.close()
-
-            self.word2index = self.read_word2vec(self.basedir + '/voc.txt')
-            sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
-            print('sorted')
-            self.index2word = [w for w, n in sorted_word_index]
-            print('index2word')
-            self.index2word_set = set(self.index2word)
-
-            # self.raw_sentences = copy.deepcopy(dataset)
-            for setname in ['train', 'test']:
-                dataset[setname] = [(self.TurnWordID(sen), [charge2index[c] for c in charge], sen) for sen, charge in tqdm(dataset[setname])]
-            # Saving
-            print('Saving dataset...')
-            self.saveDataset(self.data_dump_path, dataset, law_related_info)  # Saving tf samples
-        else:
-            dataset, law_related_info = self.loadDataset(self.data_dump_path)
-            print('loaded')
-
-        return  dataset, law_related_info
+        return dataset, law_related_info
 
     def saveDataset(self, filename, datasets, law_related_info):
         """Save samples to file
@@ -316,7 +205,7 @@ class TextData:
                 'word2index': self.word2index,
                 'index2word': self.index2word,
                 'datasets': datasets,
-                'lawinfo' : law_related_info
+                'lawinfo': law_related_info
             }
             pickle.dump(data, handle, -1)  # Using the highest protocol available
 
@@ -335,10 +224,9 @@ class TextData:
             law_related_info = data['lawinfo']
 
         self.index2word_set = set(self.index2word)
-        return  datasets, law_related_info
+        return datasets, law_related_info
 
-
-    def read_word2vec(self, vocfile ):
+    def read_word2vec(self, vocfile):
         word2index = dict()
         word2index['PAD'] = 0
         word2index['START_TOKEN'] = 1
@@ -346,16 +234,15 @@ class TextData:
         word2index['UNK'] = 3
         cnt = 4
         with open(vocfile, "r") as v:
-
             for line in v:
                 word = line.strip().split()[0]
                 word2index[word] = cnt
-                print(word,cnt)
+                print(word, cnt)
                 cnt += 1
 
-        print(len(word2index),cnt)
+        print(len(word2index), cnt)
         # dic = {w:numpy.random.normal(size=[int(sys.argv[1])]).astype('float32') for w in word2index}
-        print ('Dictionary Got!')
+        print('Dictionary Got!')
         return word2index
 
     def TurnWordID(self, words):
@@ -369,7 +256,6 @@ class TextData:
                 res.append(self.word2index['UNK'])
         return res
 
-
     def printBatch(self, batch):
         """Print a complete batch, useful for debugging
         Args:
@@ -380,7 +266,8 @@ class TextData:
             print('Encoder: {}'.format(self.batchSeq2str(batch.encoderSeqs, seqId=i)))
             print('Decoder: {}'.format(self.batchSeq2str(batch.decoderSeqs, seqId=i)))
             print('Targets: {}'.format(self.batchSeq2str(batch.targetSeqs, seqId=i)))
-            print('Weights: {}'.format(' '.join([str(weight) for weight in [batchWeight[i] for batchWeight in batch.weights]])))
+            print('Weights: {}'.format(
+                ' '.join([str(weight) for weight in [batchWeight[i] for batchWeight in batch.weights]])))
 
     def sequence2str(self, sequence, clean=False, reverse=False):
         """Convert a list of integer into a human readable string
@@ -420,7 +307,7 @@ class TextData:
         return ''.join([
             ' ' + t if not t.startswith('\'') and
                        t not in string.punctuation
-                    else t
+            else t
             for t in tokens]).strip().capitalize()
 
     def batchSeq2str(self, batchSeq, seqId=0, **kwargs):
@@ -482,7 +369,8 @@ class TextData:
         print(len(self.datasets['train']))
         for i in range(args['playDataset']):
             idSample = random.randint(0, len(self.datasets['train']) - 1)
-            print('sen: {} {}'.format(self.sequence2str(self.datasets['train'][idSample][0], clean=True), self.datasets['train'][idSample][1]))
+            print('sen: {} {}'.format(self.sequence2str(self.datasets['train'][idSample][0], clean=True),
+                                      self.datasets['train'][idSample][1]))
             print()
         pass
 

@@ -126,7 +126,7 @@ class Runner:
             self.train()
         elif args['model_arch'].startswith('lstmibgan'):
             print('Using LSTM information bottleneck GAN model. Task: ' + args['task'] )
-            LM = torch.load(args['rootDir']+'/LM.pkl', map_location=args['device'])
+            LM = torch.load(args['rootDir']+'/LM'+ args['datasetsize'] +'.pkl', map_location=args['device'])
             for param in LM.parameters():
                 param.requires_grad = False
 

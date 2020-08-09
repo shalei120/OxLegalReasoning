@@ -10,4 +10,4 @@ module load cuda/9.2
 #nvidia-smi
 echo $PWD
 # run the application
-python3 main.py -m lstmibgan_law
+python3 main.py -m lstmibgan_law  > slurm-lawmodel-$SLURM_JOB_ID.out

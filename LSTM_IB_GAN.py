@@ -76,7 +76,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.NLLloss = torch.nn.NLLLoss(reduction='none')
         self.CEloss = torch.nn.CrossEntropyLoss(reduction='none')
 
-        self.embedding = nn.Embedding(args['vocabularySize'], args['embeddingSize']).to(args['device'])
+        self.embedding = LM.embedding
 
         self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
         self.encoder_select = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
@@ -94,6 +94,8 @@ class LSTM_IB_GAN_Model(nn.Module):
             nn.Linear(args['hiddenSize'], args['chargenum']),
             nn.LogSoftmax(dim=-1)
         ).to(args['device'])
+
+        self.attm = Parameter(torch.rand(args['hiddenSize'], args['hiddenSize'] * 2)).to(args['device'])
 
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -136,8 +138,19 @@ class LSTM_IB_GAN_Model(nn.Module):
         mask = torch.sign(self.encoderInputs).float()
 
         en_outputs, en_state = self.encoder_all(self.encoderInputs, self.encoder_lengths)  # batch seq hid
-        z_nero_best = self.z_to_fea(en_outputs)
-        z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
+
+        en_hidden, en_cell = en_state  # 2 batch hid
+        # print(en_hidden.size())
+        en_hidden = en_hidden.transpose(0, 1)
+        en_hidden = en_hidden.reshape(self.batch_size, args['hiddenSize'] * 2)
+        att1 = torch.einsum('bsh,hg->bsg', en_outputs, self.attm)
+        att2 = torch.einsum('bsg,bg->bs', att1, en_hidden)
+        att2 = self.softmax(att2)
+        z_nero_best = torch.einsum('bsh,bs->bh',en_outputs , att2)
+
+        # z_nero_best = self.z_to_fea(en_outputs)
+        # z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
+        # print(z_nero_best.size())
         output_all = self.ChargeClassifier(z_nero_best).to(args['device'])  # batch chargenum
         recon_loss_all = self.NLLloss(output_all, self.classifyLabels).to(args['device'])
         recon_loss_mean_all = torch.mean(recon_loss_all).to(args['device'])
@@ -182,7 +195,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 
-        return recon_loss_mean + recon_loss_mean_all + 0.05 * I_x_z + 0.005*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
+        return recon_loss_mean + recon_loss_mean_all + 0.009 * I_x_z + 0.005*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, tt
 
 
     def forward(self, x):
@@ -318,7 +331,8 @@ def test(textData, model, datasetname, max_accuracy):
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs))
             x['enc_len'] = batch.encoder_lens
             x['labels'] = autograd.Variable(torch.LongTensor(batch.label)).to(args['device'])
-            x['labels'] = x['labels'][:, 0]
+            if args['model_arch'] in ['lstmibgan', 'lstmibgan_law']:
+                x['labels'] = x['labels'][:, 0]
 
             output_probs, output_labels = model.predict(x)
             output_labels, sampled_words, wordsamplerate = output_labels
