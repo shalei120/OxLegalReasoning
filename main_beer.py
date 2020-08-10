@@ -75,7 +75,7 @@ class Runner:
 
         if args['model_arch'] in ['lstmibgan']:
             args['classify_type'] = 'single'
-            args['batchSize'] = 64
+            args['batchSize'] = 256
 
         self.textData = TextDataBeer('beer')
         self.start_token = self.textData.word2index['START_TOKEN']
