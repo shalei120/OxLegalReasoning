@@ -181,19 +181,20 @@ class LSTM_IB_GAN_Model(nn.Module):
         elif self.arch ==  'rcnn':
             en_outputs_masked, en_final = self.encoder_mask(self.encoderInputs, sampled_seq[:, :, 1], self.encoder_lengths)  # batch seq hid
 
-        s_w_feature = self.z_to_fea(en_outputs_masked)
-        z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
+        z_nero_sampled = self.z_to_fea(en_outputs_masked[:,-1,:])
+        # z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
 
         z_prob = self.softmax(z_logit) # batch seq 2
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1)
         # print(sampled_seq[0,:,:], torch.log(z_prob+eps)[0,:,:])
-        logpz = - torch.sum(sampled_seq * torch.log(z_prob+eps), dim = 2)
-        logpz = logpz.sum(dim = 1)
+
+        logpz =  torch.sum(sampled_seq * torch.log(torch.min(z_prob+eps, torch.FloatTensor([1.0]).to(args['device']))), dim = 2)
+        logpz = (logpz*mask).mean(dim = 1)
 
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        # omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
-        omega = self.LM.LMloss(sampled_seq_soft[:,:,1],sampled_seq[:, :, 1], self.encoderInputs)
+        omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
+        # omega = self.LM.LMloss(sampled_seq_soft[:,:,1],sampled_seq[:, :, 1], self.encoderInputs)
         # omega = torch.mean(omega)
         # z_nero_sampled = self.dropout(z_nero_sampled)
         output = self.review_scorer(z_nero_sampled)  # batch aspectnum
@@ -205,19 +206,19 @@ class LSTM_IB_GAN_Model(nn.Module):
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
 #+ 0.0001 * I_x_z + 0.001*omega
-        return 10*recon_loss_mean , 10*recon_loss_mean_all , z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
+        return 10*recon_loss_mean,  0.5 * I_x_z + 0.1*omega , 10*recon_loss_mean_all , z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
 
 
     def forward(self, x):
-        losses,best_loss, z_nero_best, z_nero_sampled, _, _,_,pz, tt = self.build(x)
-        return losses,best_loss, z_nero_best, z_nero_sampled,pz, tt
+        losses,regu,best_loss, z_nero_best, z_nero_sampled, _, _,_,pz, tt = self.build(x)
+        return losses,regu,best_loss, z_nero_best, z_nero_sampled,pz, tt
 
     def predict(self, x):
-        _, _, _, _, output,sampled_words, wordsamplerate,_, _ = self.build(x)
+        _, _,_, _, _, output,sampled_words, wordsamplerate,_, _ = self.build(x)
         return output, ( sampled_words, wordsamplerate)
 
 
-def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
+def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=50, plot_every=10,
           learning_rate=0.001, n_critic=5, eps = 1e-6):
     start = time.time()
     plot_losses = []
@@ -266,7 +267,7 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
 
 
-            Gloss_pure, Gloss_best, z_nero_best, z_nero_sampled,logpz, tt = G_model(x)  # batch seq_len outsize
+            Gloss_pure, regu, Gloss_best, z_nero_best, z_nero_sampled,logpz, tt = G_model(x)  # batch seq_len outsize
             Dloss = -torch.mean(torch.log(D_model(z_nero_best)+eps)) + torch.mean(torch.log(D_model(z_nero_sampled.detach())+eps))
 
             Dloss.backward(retain_graph=True)
@@ -282,7 +283,8 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             G_optimizer.zero_grad()
             # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
-            Gloss = torch.mean(Gloss_best + (Gloss_pure - torch.log(D_model(z_nero_sampled)+eps))* logpz)
+            Gloss = torch.mean(Gloss_best + Gloss_pure+ (Gloss_pure.detach() +regu - torch.log(D_model(z_nero_sampled)+eps)) * torch.exp(logpz))
+            # Gloss = torch.mean(Gloss_best + Gloss_pure - torch.log(D_model(z_nero_sampled)+eps))
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
 

@@ -76,23 +76,25 @@ class Encoder(nn.Module):
         
         # print('sdfw',inputs.shape, self.batch_size)
         # packed_input = nn.utils.rnn.pack_padded_sequence(inputs, input_len)
-        packed_input = inputs
+        packed_input = inputs #  seq batch hid
         if mask is not None:  # seq, batch
             mask = torch.transpose(mask, 0,1)
-            # packed_out = []
-            # for ind in range(packed_input.size()[0]):
-            #     input_tokens = packed_input[ind,:,:].unsqueeze(0) # 1 batch hid
-            #     after_unit, hidden1 = self.enc_unit(input_tokens, hidden)
-            #     # print(mask[ind,:].size(), hidden1[0].size())
-            #     hidden  =( mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[0] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[0],
-            #       mask[ind,:].unsqueeze(0).unsqueeze(2) * hidden1[1] + (1-mask[ind,:].unsqueeze(0).unsqueeze(2)) * hidden[1])
-            #     packed_out.append(after_unit)
-            # packed_out = torch.cat(packed_out, dim = 0)
-            packed_input = packed_input * mask.unsqueeze(2).float()
+            packed_out = []
+            for x, m in zip(packed_input, mask):
+                m = m.unsqueeze(-1)
+                x_post, (h1,c1) = self.enc_unit(x.unsqueeze(0), hidden)
+                # print(mask[ind,:].size(), hidden1[0].size())
+                x_post = m * x_post[0,:,:] + (1-m) * x
+                h1 = m * h1 + (1-m) * hidden[0]
+                c1 = m * c1 + (1-m) * hidden[1]
+                hidden = (h1,c1)
+                packed_out.append(x_post)
+            packed_out = torch.stack(packed_out)
+            # packed_input = packed_input * mask.unsqueeze(2).float()
 
 
-        # else:
-        packed_out, hidden = self.enc_unit(packed_input, hidden)
+        else:
+            packed_out, hidden = self.enc_unit(packed_input, hidden)
         # if np.isnan(packed_out.data).any()>0:
         #     sdf=0
         return packed_out, hidden
