@@ -12,6 +12,7 @@ import numpy as np
 import datetime
 import time, math
 from Encoder import Encoder
+from rcnn_encoder import RCNNEncoder
 from Decoder import Decoder
 from Hyperparameters import args
 
@@ -79,10 +80,15 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.CEloss = torch.nn.CrossEntropyLoss(reduction='none')
 
         self.embedding = LM.embedding
-
-        self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
-        self.encoder_select = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
-        self.encoder_mask = Encoder(w2i, i2w, self.embedding).to(args['device'])
+        self.arch = 'rcnn'
+        if self.arch == 'lstm':
+            self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
+            self.encoder_select = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
+            self.encoder_mask = Encoder(w2i, i2w, self.embedding).to(args['device'])
+        elif self.arch == 'rcnn':
+            self.encoder_all = RCNNEncoder(args['embeddingSize'], args['hiddenSize']).to(args['device'])
+            self.encoder_select = RCNNEncoder(args['embeddingSize'], args['hiddenSize'], bidirectional = True).to(args['device'])
+            self.encoder_mask = RCNNEncoder(args['embeddingSize'], args['hiddenSize']).to(args['device'])
 
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=-1)
@@ -131,14 +137,18 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         # print(x['enc_input'])
         self.encoderInputs = x['enc_input']
-        self.encoder_lengths = x['enc_len']
+        self.encoder_lengths = torch.LongTensor(x['enc_len'])
         self.scores = x['labels']
         self.batch_size = self.encoderInputs.size()[0]
         self.seqlen = self.encoderInputs.size()[1]
 
         mask = torch.sign(self.encoderInputs).float()
+        if self.arch ==  'rcnn':
+            self.encoderInputs = self.embedding(self.encoderInputs)
+            en_outputs, en_final = self.encoder_all(self.encoderInputs, mask, self.encoder_lengths)  # batch seq hid
+        elif self.arch ==  'lstm':
+            en_outputs, en_state = self.encoder_all(self.encoderInputs, self.encoder_lengths)  # batch seq hid
 
-        en_outputs, en_state = self.encoder_all(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         z_nero_best = self.z_to_fea(en_outputs)
         z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
 
@@ -147,7 +157,11 @@ class LSTM_IB_GAN_Model(nn.Module):
         recon_loss_all = (output_all - self.scores) ** 2
         recon_loss_mean_all = recon_loss_all[:, args['aspect']]
 
-        en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
+        if self.arch ==  'lstm':
+            en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
+        elif self.arch ==  'rcnn':
+            en_outputs_select, en_final = self.encoder_select(self.encoderInputs, mask, self.encoder_lengths)  # batch seq hid
+
         # print(en_outputs.size())
         z_logit = self.x_2_prob_z(en_outputs_select)  # batch seq 2
 
@@ -161,8 +175,11 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         # sampled_word = self.encoderInputs * (sampled_seq[:,:,1])  # batch seq
 
-        en_outputs_masked, en_state = self.encoder_mask(self.encoderInputs, self.encoder_lengths,
+        if self.arch ==  'lstm':
+            en_outputs_masked, en_state = self.encoder_mask(self.encoderInputs, self.encoder_lengths,
                                                         sampled_seq[:, :, 1])  # batch seq hid
+        elif self.arch ==  'rcnn':
+            en_outputs_masked, en_final = self.encoder_mask(self.encoderInputs, sampled_seq[:, :, 1], self.encoder_lengths)  # batch seq hid
 
         z_nero_sampled = self.z_to_fea(en_outputs_masked[:,-1,:])
         # z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
@@ -170,6 +187,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         z_prob = self.softmax(z_logit) # batch seq 2
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1)
         # print(sampled_seq[0,:,:], torch.log(z_prob+eps)[0,:,:])
+
         logpz =  torch.sum(sampled_seq * torch.log(torch.min(z_prob+eps, torch.FloatTensor([1.0]).to(args['device']))), dim = 2)
         logpz = (logpz*mask).mean(dim = 1)
 
