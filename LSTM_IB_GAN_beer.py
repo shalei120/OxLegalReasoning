@@ -7,14 +7,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.parameter import Parameter
-
+from torch.nn.init import _calculate_fan_in_and_fan_out
 import numpy as np
-import datetime
-import time, math
+import datetime, json
+import time, math, gzip, random
 from Encoder import Encoder
 from rcnn_encoder import RCNNEncoder
 from Decoder import Decoder
 from Hyperparameters import args
+from collections import namedtuple
+
+from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR, \
+    ExponentialLR
+
+from common.classifier import Classifier
+from common.generator import IndependentGenerator
 
 
 def asMinutes(s):
@@ -53,6 +60,12 @@ class Discriminator(nn.Module):
         G_judge_score = self.disc(z_nero)
         return G_judge_score
 
+class Vocabulary:
+    """A vocabulary, assigns IDs to tokens"""
+
+    def __init__(self, w2i,i2w):
+        self.w2i = w2i
+        self.i2w = i2w
 
 class LSTM_IB_GAN_Model(nn.Module):
     """
@@ -62,7 +75,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         2 LTSM layers
     """
 
-    def __init__(self, w2i, i2w, LM):
+    def __init__(self, w2i, i2w, LM, i2v = None):
         """
         Args:
             args: parameters of the model
@@ -70,7 +83,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         """
         super(LSTM_IB_GAN_Model, self).__init__()
         print("Model creation...")
-
+        self.vocab = Vocabulary(w2i,i2w)
         self.LM = LM
         self.word2index = w2i
         self.index2word = i2w
@@ -79,7 +92,10 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.NLLloss = torch.nn.NLLLoss(reduction='none')
         self.CEloss = torch.nn.CrossEntropyLoss(reduction='none')
 
-        self.embedding = LM.embedding
+        # self.embedding = LM.embedding
+        self.embedding = nn.Embedding.from_pretrained(torch.FloatTensor(i2v))
+        self.embedding.weight.requires_grad = False
+
         self.arch = 'rcnn'
         if self.arch == 'lstm':
             self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
@@ -96,13 +112,28 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.x_2_prob_z = nn.Sequential(
             nn.Linear(args['hiddenSize'] * 2, 2)
         ).to(args['device'])
-        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_to_fea_best = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_to_fea_sample = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
 
-        self.review_scorer = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']),
+        self.review_scorer_best = nn.Sequential(
+            nn.Linear(args['hiddenSize'], 1),
+            nn.Sigmoid()
+        ).to(args['device'])
+
+        self.review_scorer_sample = nn.Sequential(
+            nn.Linear(args['hiddenSize'],1),
             nn.Sigmoid()
         ).to(args['device'])
         # self.dropout = nn.Dropout(0.05)
+
+        self.criterion = nn.MSELoss(reduction='none')
+
+        # self.encoder = Classifier(
+        #     embed=self.embedding, hidden_size=args['hiddenSize'], output_size=1,
+        #     dropout=0.1, layer="rcnn")
+        # self.generator = IndependentGenerator(
+        #     embed=self.embedding, hidden_size=args['hiddenSize'],
+        #     dropout=0.1, layer="rcnn")
 
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -127,6 +158,10 @@ class LSTM_IB_GAN_Model(nn.Module):
         y_hard = (y_hard - y).detach() + y
         return y_hard, y
 
+    @property
+    def z(self):
+        return self.sampled_seq
+
     def build(self, x, eps=1e-6):
         '''
         :param encoderInputs: [batch, enc_len]
@@ -137,11 +172,12 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         # print(x['enc_input'])
         self.encoderInputs = x['enc_input']
-        self.encoder_lengths = torch.LongTensor(x['enc_len'])
+        self.encoder_lengths = x['enc_len'] #torch.LongTensor(x['enc_len']).to(args['device'])
         self.scores = x['labels']
         self.batch_size = self.encoderInputs.size()[0]
         self.seqlen = self.encoderInputs.size()[1]
-
+        optional = {}
+        # best
         mask = torch.sign(self.encoderInputs).float()
         if self.arch ==  'rcnn':
             self.encoderInputs = self.embedding(self.encoderInputs)
@@ -149,14 +185,18 @@ class LSTM_IB_GAN_Model(nn.Module):
         elif self.arch ==  'lstm':
             en_outputs, en_state = self.encoder_all(self.encoderInputs, self.encoder_lengths)  # batch seq hid
 
-        z_nero_best = self.z_to_fea(en_outputs)
+        z_nero_best = self.z_to_fea_best(en_outputs)
         z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
 
         # z_nero_best = self.dropout(z_nero_best)
-        output_all = self.review_scorer(z_nero_best)  # batch 5
-        recon_loss_all = (output_all - self.scores) ** 2
-        recon_loss_mean_all = recon_loss_all[:, args['aspect']]
+        output_all = self.review_scorer_best(z_nero_best)  # batch 5
+        # recon_loss_all = (output_all - self.scores) ** 2
+        # recon_loss_mean_all = recon_loss_all[:, args['aspect']]
+        loss_mat_best = self.criterion(output_all, self.scores[:, args['aspect']].unsqueeze(1))
+        loss_vec_best = loss_mat_best.mean(1)
 
+
+        # sample
         if self.arch ==  'lstm':
             en_outputs_select, en_state = self.encoder_select(self.encoderInputs, self.encoder_lengths)  # batch seq hid
         elif self.arch ==  'rcnn':
@@ -164,13 +204,19 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         # print(en_outputs.size())
         z_logit = self.x_2_prob_z(en_outputs_select)  # batch seq 2
+        self.z_prob = z_prob = self.softmax(z_logit) # batch seq 2
 
-        z_logit_fla = z_logit.reshape((self.batch_size * self.seqlen, 2))
-        sampled_seq, sampled_seq_soft = self.gumbel_softmax(z_logit_fla) # batch seq  //0-1
-        sampled_seq = sampled_seq.reshape((self.batch_size, self.seqlen, 2))
-        sampled_seq_soft = sampled_seq_soft.reshape((self.batch_size, self.seqlen, 2))
-        sampled_seq = sampled_seq * mask.unsqueeze(2)
-        sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
+        if self.training:
+            z_logit_fla = z_logit.reshape((self.batch_size * self.seqlen, 2))
+            sampled_seq, sampled_seq_soft = self.gumbel_softmax(z_logit_fla) # batch seq  //0-1
+            sampled_seq = sampled_seq.reshape((self.batch_size, self.seqlen, 2))
+            sampled_seq_soft = sampled_seq_soft.reshape((self.batch_size, self.seqlen, 2))
+            sampled_seq = sampled_seq * mask.unsqueeze(2)
+            sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
+            sampled_seq = sampled_seq.detach()
+        else:
+            print('Evaluating...')
+            sampled_seq = (z_prob >= 0.5).float()
         # print(sampled_seq)
 
         # sampled_word = self.encoderInputs * (sampled_seq[:,:,1])  # batch seq
@@ -178,61 +224,156 @@ class LSTM_IB_GAN_Model(nn.Module):
         if self.arch ==  'lstm':
             en_outputs_masked, en_state = self.encoder_mask(self.encoderInputs, self.encoder_lengths,
                                                         sampled_seq[:, :, 1])  # batch seq hid
+            z_nero_sampled = self.z_to_fea(en_outputs_masked[:,-1,:])
         elif self.arch ==  'rcnn':
-            en_outputs_masked, en_final = self.encoder_mask(self.encoderInputs, sampled_seq[:, :, 1], self.encoder_lengths)  # batch seq hid
+            emb = self.encoderInputs * sampled_seq[:, :, 1].unsqueeze(2)
+            en_outputs_masked, en_final = self.encoder_mask(emb, sampled_seq[:, :, 1], self.encoder_lengths)  # batch seq hid
 
-        z_nero_sampled = self.z_to_fea(en_outputs_masked[:,-1,:])
+            z_nero_sampled = en_final
         # z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
 
-        z_prob = self.softmax(z_logit) # batch seq 2
         I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1)
+        # I_x_z = sampled_seq[:, :, 1].sum(1)
         # print(sampled_seq[0,:,:], torch.log(z_prob+eps)[0,:,:])
 
-        logpz =  torch.sum(sampled_seq * torch.log(torch.min(z_prob+eps, torch.FloatTensor([1.0]).to(args['device']))), dim = 2)
-        logpz = (logpz*mask).mean(dim = 1)
+        self.sampled_seq = sampled_seq[:, :, 1]
+        # logpz =  torch.sum(sampled_seq * torch.log(torch.min(z_prob+eps, torch.FloatTensor([1.0]).to(args['device']))), dim = 2)
+        # logpz = (logpz*mask).sum(dim = 1)
 
+        logp_z0 = torch.log(z_prob[:, :, 0])  # [B,T], log P(z = 0 | x)
+        logp_z1 = torch.log(z_prob[:, :, 1])  # [B,T], log P(z = 1 | x)
+        logpz = torch.where(sampled_seq[:, :, 1] == 0, logp_z0, logp_z1)
+        logpz = mask * logpz
+        # print(logpz)
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        omega = torch.mean(torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1))
-        # omega = self.LM.LMloss(sampled_seq_soft[:,:,1],sampled_seq[:, :, 1], self.encoderInputs)
+        # omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
+        omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
         # omega = torch.mean(omega)
         # z_nero_sampled = self.dropout(z_nero_sampled)
-        output = self.review_scorer(z_nero_sampled)  # batch aspectnum
-        recon_loss = (output - self.scores)**2
-        recon_loss_mean = recon_loss[:, args['aspect']]
+        output = self.review_scorer_sample(z_nero_sampled)  # batch aspectnum
+        loss_mat = self.criterion(output, self.scores[:,args['aspect']].unsqueeze(1))
+        # recon_loss = (output - self.scores)**2
+        # recon_loss_mean = recon_loss[:, args['aspect']]
+        loss_vec = loss_mat.mean(1)  # [B]
+        optional["mse_sp"] = loss_vec.mean().item()  # [1]
+        optional['mse_best'] = loss_vec_best.mean().item()
+        optional['I_x_z'] = I_x_z.mean().item()
+        optional['zdiff'] = omega.mean().item()
 
-        tt = torch.stack([recon_loss_mean.mean(), recon_loss_mean_all.mean(), I_x_z.mean(), omega.mean()])
-        wordnum = torch.sum(mask, dim=1)
-        sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
-        sampled_num = (sampled_num == 0).float()  + sampled_num
-#+ 0.0001 * I_x_z + 0.001*omega
-        return 10*recon_loss_mean,  0.5 * I_x_z + 0.1*omega , 10*recon_loss_mean_all , z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
+        num_0, num_c, num_1, total = self.get_z_stats(self.sampled_seq, mask)
+        optional["p0"] = num_0 / float(total)
+        optional["p1"] = num_1 / float(total)
+        optional["selected"] = optional["p1"]
 
+        return loss_vec,  0.0003 * I_x_z + 0.0006*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
+        # return  0, 0,0, 0, 0, 0,self.sampled_seq, 0,0, 0 , main_loss, optional
+
+    def get_z_stats(self, z=None, mask=None):
+        """
+        Computes statistics about how many zs are
+        exactly 0, continuous (between 0 and 1), or exactly 1.
+        :param z:
+        :param mask: mask in [B, T]
+        :return:
+        """
+
+        z = torch.where(mask>0, z, z.new_full([1], 1e2))
+
+        num_0 = (z == 0.).sum().item()
+        num_c = ((z > 0.) & (z < 1.)).sum().item()
+        num_1 = (z == 1.).sum().item()
+
+        total = num_0 + num_c + num_1
+        mask_total = mask.sum().item()
+
+        assert total == mask_total, "total mismatch"
+        return num_0, num_c, num_1, mask_total
 
     def forward(self, x):
-        losses,regu,best_loss, z_nero_best, z_nero_sampled, _, _,_,pz, tt = self.build(x)
-        return losses,regu,best_loss, z_nero_best, z_nero_sampled,pz, tt
+        losses,regu,best_loss, z_nero_best, z_nero_sampled, _, _,pz, optional = self.build(x)
+        return losses,regu,best_loss, z_nero_best, z_nero_sampled,pz, optional
 
     def predict(self, x):
-        _, _,_, _, _, output,sampled_words, wordsamplerate,_, _ = self.build(x)
-        return output, ( sampled_words, wordsamplerate)
+        _, _,_, _, _, output,sampled_words, _, _  = self.build(x)
+        return output, sampled_words
+
+def xavier_uniform_n_(w, gain=1., n=4):
+    """
+    Xavier initializer for parameters that combine multiple matrices in one
+    parameter for efficiency. This is e.g. used for GRU and LSTM parameters,
+    where e.g. all gates are computed at the same time by 1 big matrix.
+    :param w:
+    :param gain:
+    :param n:
+    :return:
+    """
+    with torch.no_grad():
+        fan_in, fan_out = _calculate_fan_in_and_fan_out(w)
+        assert fan_out % n == 0, "fan_out should be divisible by n"
+        fan_out = fan_out // n
+        std = gain * math.sqrt(2.0 / (fan_in + fan_out))
+        a = math.sqrt(3.0) * std
+        nn.init.uniform_(w, -a, a)
+
+def initialize_model_(model):
+    """
+    Model initialization.
+    :param model:
+    :return:
+    """
+    print("Glorot init")
+    for name, p in model.named_parameters():
+        if name.startswith("embed") or "lagrange" in name:
+            print("{:10s} {:20s} {}".format("unchanged", name, p.shape))
+        elif "lstm" in name and len(p.shape) > 1:
+            print("{:10s} {:20s} {}".format("xavier_n", name, p.shape))
+            xavier_uniform_n_(p)
+        elif len(p.shape) > 1:
+            print("{:10s} {:20s} {}".format("xavier", name, p.shape))
+            torch.nn.init.xavier_uniform_(p)
+        elif "bias" in name:
+            print("{:10s} {:20s} {}".format("zeros", name, p.shape))
+            torch.nn.init.constant_(p, 0.)
+        else:
+            print("{:10s} {:20s} {}".format("unchanged", name, p.shape))
 
 
-def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=50, plot_every=10,
+def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=50, plot_every=10,
           learning_rate=0.001, n_critic=5, eps = 1e-6):
+    test_data = beer_annotations_reader('../beer/annotations.json', aspect=0)
     start = time.time()
     plot_losses = []
     print_Gloss_total = 0  # Reset every print_every
     plot_Gloss_total = 0  # Reset every plot_every
     print_Dloss_total = 0  # Reset every print_every
     plot_Dloss_total = 0  # Reset every plot_every
-    G_model = LSTM_IB_GAN_Model(textData.word2index, textData.index2word, LM).to(args['device'])
+    G_model = LSTM_IB_GAN_Model(textData.word2index, textData.index2word, LM, i2v).to(args['device'])
     D_model = Discriminator().to(args['device'])
 
     print(type(textData.word2index))
 
-    G_optimizer = optim.Adam(G_model.parameters(), lr=learning_rate, eps=1e-3, amsgrad=True)
-    D_optimizer = optim.Adam(D_model.parameters(), lr=learning_rate, eps=1e-3, amsgrad=True)
+    G_optimizer = optim.Adam(G_model.parameters(), lr=0.0004, weight_decay=2e-6)
+    D_optimizer = optim.Adam(D_model.parameters(), lr=0.0004, weight_decay=2e-6)
+    initialize_model_(G_model)
+    initialize_model_(D_model)
+    if args["scheduler"] == "plateau":
+        scheduler = ReduceLROnPlateau(
+            G_optimizer, mode='min', factor=args["lr_decay"],
+            patience=args["patience"],
+            threshold=args["threshold"], threshold_mode='rel',
+            cooldown=args["cooldown"], verbose=True, min_lr=args["min_lr"])
+    elif args["scheduler"] == "exponential":
+        scheduler = ExponentialLR(G_optimizer, gamma=args["lr_decay"])
+    elif args["scheduler"] == "multistep":
+        milestones = args["milestones"]
+        print("milestones (epoch):", milestones)
+        scheduler = MultiStepLR(
+            G_optimizer, milestones=milestones, gamma=args["lr_decay"])
+        scheduler_D = MultiStepLR(
+            D_optimizer, milestones=milestones, gamma=args["lr_decay"])
+    else:
+        raise ValueError("Unknown scheduler")
 
     iter = 1
     batches = textData.getBatches()
@@ -242,14 +383,14 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
     args['trainseq2seq'] = False
 
     max_p = -1
+    # accuracy = test(textData, G_model, 'test', max_p)
 
-    # accuracy = test(textData, G_model, 'test', max_accu)
+    test2(G_model, test_data)
     for epoch in range(args['numEpochs']):
         Glosses = []
         Dlosses = []
 
         for index, batch in enumerate(batches):
-
             # ---------------------
             #  Train Discriminator
             # ---------------------
@@ -260,32 +401,44 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
 
             # for ind in range(index, index+5):
             #     ind = ind % n_iters
-            D_optimizer.zero_grad()
+
             x = {}
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-            x['enc_len'] = batch.encoder_lens
+            x['enc_len'] = torch.LongTensor(batch.encoder_lens).to(args['device'])
             x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
 
+            G_model.train()
+            G_model.zero_grad()
+            D_model.zero_grad()
 
-            Gloss_pure, regu, Gloss_best, z_nero_best, z_nero_sampled,logpz, tt = G_model(x)  # batch seq_len outsize
+            Gloss_pure, regu, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
             Dloss = -torch.mean(torch.log(D_model(z_nero_best)+eps)) + torch.mean(torch.log(D_model(z_nero_sampled.detach())+eps))
-
+            # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
-
+            #
             torch.nn.utils.clip_grad_norm_(D_model.parameters(), args['clip'])
-
+            #
             D_optimizer.step()
 
             # if i % n_critic == 0:
             # -----------------
             #  Train Generator
             # -----------------
-            G_optimizer.zero_grad()
-            # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size())
+
+            G_model.zero_grad()
+            D_model.zero_grad()
+            # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size(), regu.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
-            Gloss = torch.mean(Gloss_best + Gloss_pure+ (Gloss_pure.detach() +regu - torch.log(D_model(z_nero_sampled)+eps)) * torch.exp(logpz))
+            #- torch.log(D_model(z_nero_sampled)+eps) Gloss_best.mean() +
+            Gloss = Gloss_best.mean() + Gloss_pure.mean() + ((Gloss_pure.detach() +regu - torch.log(D_model(z_nero_sampled).squeeze())) * logpz.sum(1)).mean()
+            # cost_vec = Gloss_pure.detach() + regu
+            # Gloss = Gloss_pure.mean() + (cost_vec * logpz.sum(1)).mean(0)
+
+
+            # print(Gloss_best.mean() , Gloss_pure.mean(),((Gloss_pure.detach() +regu ) * logpz).mean())
             # Gloss = torch.mean(Gloss_best + Gloss_pure - torch.log(D_model(z_nero_sampled)+eps))
             Gloss.backward(retain_graph=True)
+            torch.nn.utils.clip_grad_norm_(G_model.parameters(), args['clip'])
             G_optimizer.step()
 
             print_Gloss_total += Gloss.data
@@ -304,7 +457,7 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
                 print_Dloss_total = 0
                 print('%s (%d %d%%) %.4f %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
                                                   iter, iter / n_iters * 100, print_Gloss_avg, print_Dloss_avg), end='')
-                print(tt)
+                print(optional)
 
             if iter % plot_every == 0:
                 plot_loss_avg = plot_Gloss_total / plot_every
@@ -315,6 +468,19 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             # print(iter, datetime.datetime.now())
 
         MSEloss, total_prec, samplerate = test(textData, G_model, 'test', max_p)
+        cur_lr = scheduler.optimizer.param_groups[0]["lr"]
+        if cur_lr > args["min_lr"]:
+            if isinstance(scheduler, MultiStepLR):
+                scheduler.step()
+            elif isinstance(scheduler, ExponentialLR):
+                scheduler.step()
+
+        cur_lr = scheduler.optimizer.param_groups[0]["lr"]
+        print("#lr", cur_lr)
+        scheduler.optimizer.param_groups[0]["lr"] = max(args["min_lr"],
+                                                        cur_lr)
+
+        test2(G_model, test_data)
         if total_prec > max_p or max_p == -1:
             print('total_prec = ', total_prec, '>= max_p(', max_p, '), saving model...')
             torch.save([G_model, D_model], model_path)
@@ -336,24 +502,23 @@ def test(textData, model, datasetname, max_accuracy):
     MSEloss = 0
     total_prec = 0.0
     samplerate = 0.0
+    model.eval()
     with torch.no_grad():
         for batch in textData.getBatches(datasetname):
             x = {}
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
-            x['enc_len'] = batch.encoder_lens
+            x['enc_len'] = torch.LongTensor(batch.encoder_lens).to(args['device'])
             x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
 
-            output_probs, output_labels = model.predict(x)
-            sampled_words, wordsamplerate = output_labels
+            output_probs, sampled_words = model.predict(x)
             if not pppt:
                 pppt = True
-                for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
+                for w, choice in zip(batch.encoderSeqs[0], sampled_words):
                     if choice[1] == 1:
                         print('<',textData.index2word[w],'>', end=' ')
                     else:
                         print(textData.index2word[w], end=' ')
 
-                print('sample rate: ', wordsamplerate[0])
 
             batch_correct = (output_probs.cpu().numpy() - x['labels'].cpu().numpy())**2
             batch_correct = batch_correct[:, args['aspect']]
@@ -366,11 +531,11 @@ def test(textData, model, datasetname, max_accuracy):
             for i, b in enumerate(batch.encoder_lens):
                 right = 0
                 for w, choice in zip(batch.encoderSeqs[i], sampled_words[i]):
-                    if choice[1] == 1 and w in batch.rationals[i][args['aspect']]:
+                    if choice == 1 and w in batch.rationals[i][args['aspect']]:
                         right += 1
                 prec += right / seqlen[i]
             total_prec =( total_prec * total + prec) / (total + x['enc_input'].size()[0])
-            samplerate = (samplerate * total + wordsamplerate.sum(dim = 0))/ (total + x['enc_input'].size()[0])
+            # samplerate = (samplerate * total + wordsamplerate.sum(dim = 0))/ (total + x['enc_input'].size()[0])
 
             total += x['enc_input'].size()[0]
 
@@ -380,4 +545,245 @@ def test(textData, model, datasetname, max_accuracy):
             #         dset.append((batch.encoderSeqs[ind], x['labels'][ind], output_labels[ind]))
 
 
-    return MSEloss, total_prec, samplerate
+    return MSEloss, total_prec, 0
+
+def beer_reader(path, aspect=-1, max_len=0):
+    """
+    Reads in Beer multi-aspect sentiment data
+    :param path:
+    :param aspect: which aspect to train/evaluate (-1 for all)
+    :return:
+    """
+
+    BeerExample = namedtuple("Example", ["tokens", "scores"])
+    with gzip.open(path, 'rt', encoding='utf-8') as f:
+        for line in f:
+            parts = line.split()
+            scores = list(map(float, parts[:5]))
+
+            if aspect > -1:
+                scores = [scores[aspect]]
+
+            tokens = parts[5:]
+            if max_len > 0:
+                tokens = tokens[:max_len]
+            yield BeerExample(tokens=tokens, scores=scores)
+
+
+def beer_annotations_reader(path, aspect=-1):
+    """
+    Reads in Beer annotations from json
+    :param path:
+    :param aspect: which aspect to evaluate
+    :return:
+    """
+    BeerTestExample = namedtuple("Example", ["tokens", "scores", "annotations"])
+    examples = []
+    with open(path, mode="r", encoding="utf-8") as f:
+        for line in f:
+            data = json.loads(line)
+            tokens = data["x"]
+            scores = data["y"]
+            annotations = [data["0"], data["1"], data["2"],
+                           data["3"], data["4"]]
+
+            if aspect > -1:
+                scores = [scores[aspect]]
+                annotations = [annotations[aspect]]
+
+            ex = BeerTestExample(
+                tokens=tokens, scores=scores, annotations=annotations)
+            examples.append(ex)
+    return examples
+
+def get_minibatch(data, batch_size=256, shuffle=False):
+    """Return minibatches, optional shuffling"""
+
+    if shuffle:
+        print("Shuffling training data")
+        random.shuffle(data)  # shuffle training data each epoch
+
+    batch = []
+
+    # yield minibatches
+    for example in data:
+        batch.append(example)
+
+        if len(batch) == batch_size:
+            yield batch
+            batch = []
+
+    # in case there is something left
+    if len(batch) > 0:
+        yield batch
+
+def pad(tokens, length, pad_value=0):
+    """add padding 1s to a sequence to that it has the desired length"""
+    return tokens + [pad_value] * (length - len(tokens))
+
+def prepare_minibatch(mb, vocab, device=None, sort=True):
+    """
+    Minibatch is a list of examples.
+    This function converts words to IDs and returns
+    torch tensors to be used as input/targets.
+    """
+    # batch_size = len(mb)
+    lengths = np.array([len(ex.tokens) for ex in mb])
+    maxlen = lengths.max()
+    reverse_map = None
+
+    # vocab returns 0 if the word is not there
+    x = [pad([vocab.w2i.get(t, 3) for t in ex.tokens], maxlen) for ex in mb]
+    y = [ex.scores for ex in mb]
+
+    x = np.array(x)
+    y = np.array(y, dtype=np.float32)
+
+    if sort:  # required for LSTM
+        sort_idx = np.argsort(lengths)[::-1]
+        x = x[sort_idx]
+        y = y[sort_idx]
+
+        # create reverse map
+        reverse_map = np.zeros(len(lengths), dtype=np.int32)
+        for i, j in enumerate(sort_idx):
+            reverse_map[j] = i
+
+    x = torch.from_numpy(x).to(device)
+    y = torch.from_numpy(y).to(device)
+
+    return x, y, reverse_map
+
+def decorate_token(t, z_):
+    dec = "**" if z_ == 1 else "__" if z_ > 0 else ""
+    return dec + t + dec
+
+def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
+                       path=None):
+    """Precision on annotated rationales.
+    This works in a simple way:
+    We have a predicted vector z
+    We have a gold annotation  z_gold
+    We take a logical and (to intersect the two)
+    We sum the number of words in the intersection and divide by the total
+    number of selected words.
+    """
+
+    assert aspect is not None, "provide aspect"
+    assert device is not None, "provide device"
+
+    # if not hasattr(model, "z"):
+    #     print('No z')
+    #     return
+
+    if path is not None:
+        ft = open(path, mode="w", encoding="utf-8")
+        fz = open(path + ".z", mode="w", encoding="utf-8")
+
+    model.eval()  # disable dropout
+    sent_id, correct, total, macro_prec_total, macro_n = 0, 0, 0, 0, 0
+
+    for mb in get_minibatch(data, batch_size=batch_size, shuffle=False):
+        x, targets, reverse_map = prepare_minibatch(
+            mb, model.vocab, device=device, sort=True)
+        with torch.no_grad():
+            xmap = {'enc_input': x,
+                    'enc_len': torch.sign(x).long().sum(1).detach(),
+                    'labels': targets}
+            # logits = model(xmap)
+            # print('mbing 1')
+            output, z= model.predict(xmap )
+            # z = z[:,:,1]
+            # print('mbing 2')
+            # attention alphas
+            # if hasattr(model, "alphas"):
+            #     alphas = model.alphas
+            # else:
+            #     alphas = None
+
+            # rationale z
+            # if hasattr(model, "z"):
+            # z = model.z  # [B, T]
+
+            bsz, max_time = z.size()
+            # else:
+            #     z = None
+
+        # the inputs were sorted to enable packed_sequence for LSTM
+        # we need to reverse sort them so that they correspond
+        # to the original order
+
+        # reverse sort
+        # alphas = alphas[reverse_map] if alphas is not None else None
+        z = z[reverse_map] if z is not None else None  # [B,T]
+
+        # evaluate each sentence in this minibatch
+        for mb_i, ex in enumerate(mb):
+            tokens = ex.tokens
+            annotations = ex.annotations
+
+            # assuming here that annotations only has valid ranges for the
+            # current aspect
+            if aspect > -1:
+                assert len(annotations) == 1, "expected only 1 aspect"
+
+            # if alphas is not None:
+            #     alpha = alphas[mb_i][:len(tokens)]
+            #     alpha = alpha[None, :]
+
+            # z is [batch_size, time]
+            if z is not None:
+
+                z_ex = z[mb_i, :len(tokens)]  # i for minibatch example
+                z_ex_nonzero = (z_ex > 0).float()
+                z_ex_nonzero_sum = z_ex_nonzero.sum().item()
+
+                # list of decorated tokens for this single example, to print
+                example = []
+                for ti, zi in zip(tokens, z_ex):
+                    example.append(decorate_token(ti, zi))
+
+                # write this sentence
+                ft.write(" ".join(example))
+                ft.write("\n")
+                fz.write(" ".join(["%.4f" % zi for zi in z_ex]))
+                fz.write("\n")
+
+                # skip if no gold rationale for this sentence
+                if aspect >= 0 and len(annotations[0]) == 0:
+                    continue
+
+                # compute number of matching tokens & precision
+                matched = sum(1 for i, zi in enumerate(z_ex) if zi > 0 and
+                              any(interval[0] <= i < interval[1]
+                                  for a in annotations for interval in a))
+
+                precision = matched / (z_ex_nonzero_sum + 1e-9)
+
+                macro_prec_total += precision
+                correct += matched
+                total += z_ex_nonzero_sum
+                if z_ex_nonzero_sum > 0:
+                    macro_n += 1
+
+                # print(matched, end="\t")
+
+            sent_id += 1
+    # print()
+    # print("new correct", correct, "total", total)
+
+    precision = correct / (total + 1e-9)
+    macro_precision = macro_prec_total / (float(macro_n) + 1e-9)
+
+    try:
+        ft.close()
+        fz.close()
+    except IOError:
+        print("Error closing file(s)")
+
+    return precision, macro_precision
+
+def test2(model,test_data):
+    test_precision, test_macro_prec = evaluate_rationale(model, test_data, aspect=0,device=args['device'], path='./record.txt', batch_size=256)
+
+    print('Rational: ', test_precision, test_macro_prec)

@@ -75,23 +75,25 @@ class Runner:
 
         if args['model_arch'] in ['lstmibgan']:
             args['classify_type'] = 'single'
-            args['batchSize'] = 256
+            args['batchSize'] = 128
 
         self.textData = TextDataBeer('beer')
-        self.start_token = self.textData.word2index['START_TOKEN']
-        self.end_token = self.textData.word2index['END_TOKEN']
+        # self.start_token = self.textData.word2index['START_TOKEN']
+        # self.end_token = self.textData.word2index['END_TOKEN']
         args['vocabularySize'] = self.textData.getVocabularySize()
         args['chargenum'] = 5
+        args['embeddingSize'] = self.textData.index2vector.shape[1]
         print(self.textData.getVocabularySize())
         args['model_arch'] = 'lstmibgan'
         args['aspect'] = 0
+        args['hiddenSize'] = 200
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
             LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
             for param in LM.parameters():
                 param.requires_grad = False
-
-            LSTM_IB_GAN_beer.train(self.textData, LM)
+            # LM=0
+            LSTM_IB_GAN_beer.train(self.textData, LM, self.textData.index2vector)
 
     def indexesFromSentence(self, sentence):
         return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['UNK']
@@ -132,5 +134,6 @@ class Runner:
 
 
 if __name__ == '__main__':
+
     r = Runner()
     r.main()

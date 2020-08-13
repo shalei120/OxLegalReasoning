@@ -32,7 +32,7 @@ def timeSince(since, percent):
     return '%s (- %s)' % (asMinutes(s), datetime.datetime.now())
 
 class LanguageModel(nn.Module):
-    def __init__(self,w2i, i2w):
+    def __init__(self,w2i, i2w, i2v):
         """
         Args:
             args: parameters of the model
@@ -48,7 +48,8 @@ class LanguageModel(nn.Module):
 
         self.dtype = 'float32'
 
-        self.embedding = nn.Embedding(args['vocabularySize'], args['embeddingSize'])
+        self.embedding = nn.Embedding.from_pretrained(torch.FloatTensor(i2v))
+        self.embedding.weight.requires_grad = False
 
         if args['decunit'] == 'lstm':
             self.dec_unit = nn.LSTM(input_size=args['embeddingSize'],
@@ -149,13 +150,49 @@ class LanguageModel(nn.Module):
         recon_loss_mean, fake_loss = self.buildModel(x, test)
         return  recon_loss_mean, fake_loss
 
-    def LMloss(self, sampled_soft, sampled_hard, decoderInputs):
-
+    def LMloss(self, sampled_hard, decoderInputs, eps = 1e-6):
+        batchsize = decoderInputs.size()[0]
+        seqlen =  decoderInputs.size()[1]
         decoderTargets = decoderInputs[:,1:]
         decoderInputs = decoderInputs[:,:-1]
         decoderTargetsEmbeddings = self.embedding(decoderTargets)
         decoderTargetsEmbeddings = decoderTargetsEmbeddings * sampled_hard[:,1:].unsqueeze(2)
-        temp1, recon_loss_mean = self.getloss(decoderInputs, decoderTargetsEmbeddings, decoderTargets)
+        packed_input = torch.transpose(decoderInputs, 0, 1)
+        mask = torch.transpose(sampled_hard[:,:-1], 0, 1)
+        mask_out = torch.transpose(sampled_hard[:,1:], 0, 1)
+        target_embs = decoderTargetsEmbeddings.transpose(0,1)
+        packed_out = []
+        hidden =  (self.init_state[0].repeat([1, batchsize, 1]), self.init_state[1].repeat([1, batchsize, 1]))
+        y_iter = torch.zeros(batchsize, args['embeddingSize']).to(args['device'])
+        ys = []
+        for ind in range(seqlen-1)[::-1]:
+            m = mask_out[ind,:].unsqueeze(-1)
+            y = target_embs[ind,:]
+            y_iter = m * y + (1-m) * y_iter
+            ys.append(y_iter)
+        ys = torch.stack(ys[::-1]) # s b h
+
+        packed_input_embs = self.embedding(packed_input) # s b e
+        for x, m in zip(packed_input_embs, mask):
+            m = m.unsqueeze(-1)
+            # print(x.size(), x.unsqueeze(0).size())
+            x_post, (h1, c1) = self.dec_unit(x.unsqueeze(0), hidden)
+            # print(mask[ind,:].size(), hidden1[0].size())
+            h1 = m * h1 + (1 - m) * hidden[0]
+            c1 = m * c1 + (1 - m) * hidden[1]
+            hidden = (h1, c1)
+            packed_out.append(x_post)
+        packed_out = torch.cat(packed_out, dim=0).transpose(0,1)
+        # print(packed_out.size(), self.M.size())
+        temp1 = torch.einsum('bsh,he->bse', packed_out, self.M)  # b s e
+        temp2 = torch.einsum('bse,sbe->bs', temp1, ys)
+        probs = self.sigmoid(temp2)
+
+        recon_loss = - torch.log(probs + eps)
+        # print(recon_loss.size(), mask.size())
+        recon_loss = recon_loss * sampled_hard[:,:-1]
+        # temp1, recon_loss_mean = self.getloss(decoderInputs, decoderTargetsEmbeddings, decoderTargets)
+        recon_loss_mean = recon_loss.mean(1)
         return recon_loss_mean
 
 
@@ -260,5 +297,7 @@ if __name__ == '__main__':
     textData = TextDataBeer('beer')
     args['vocabularySize'] = textData.getVocabularySize()
     args['chargenum'] = 5
-    model = LanguageModel(textData.word2index, textData.index2word).to(args['device'])
+    args['embeddingSize'] = textData.index2vector.shape[1]
+
+    model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
     train(textData, model, model_path = args['rootDir']+'/LMbeer.pkl')
