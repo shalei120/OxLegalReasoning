@@ -43,6 +43,13 @@ class HP:
         args['temperature'] =1.0
         args['classify_type'] = 'multi'
         args['task'] = 'charge'
+        args['scheduler'] = 'multistep'
+        args["lr_decay"] = 0.97
+        args["patience"] = 5
+        args["threshold"] = 1e-4
+        args["cooldown"] = 0
+        args["min_lr"]=5e-5
+        args["milestones"] = [25, 50, 75]
 
         return args
 

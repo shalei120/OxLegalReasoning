@@ -247,7 +247,7 @@ class TextDataBeer:
             dataset = {'train': [], 'dev':[], 'test':[]}
 
             self.word2index, self.index2word, self.index2vector = self.read_word2vec_from_pretrained(self.embfile,
-                                                                                                     topk_word_num=40000)
+                                                                                                     topk_word_num=-1)
             self.index2word_set = set(self.index2word)
 
             with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
@@ -277,8 +277,8 @@ class TextDataBeer:
                     review = json.loads(line)
                     word_seq = review['x']
                     y = np.asarray(review['y'])
-                    raw_x = eval(review['raw'])['review/text']
-                    words = self.tokenizer(raw_x.lower())
+                    # raw_x = eval(review['raw'])['review/text']
+                    # words = self.tokenizer(raw_x.lower())
                     rational={}
                     for i in range(5):
                         intervals = review[str(i)]
@@ -289,7 +289,7 @@ class TextDataBeer:
                         rational[i]=set([self.word2index[w] for w in set(all_rw_in_rational) if w in self.word2index])
 
 
-                    dataset['test'].append((words, y, rational))
+                    dataset['test'].append((word_seq, y, rational))
 
             print(len(dataset['train']), len(dataset['dev']), len(dataset['test']))
 
@@ -321,6 +321,7 @@ class TextDataBeer:
             }
             pickle.dump(data, handle, -1)  # Using the highest protocol available
 
+
     def loadDataset(self, filename):
         """Load samples from file
         Args:
@@ -338,6 +339,9 @@ class TextDataBeer:
         print('dev: \t', len(datasets['dev']))
         print('testing: \t', len(datasets['test']))
         self.index2word_set = set(self.index2word)
+        print('w2i shape: ', len(self.word2index))
+        print('i2w shape: ', len(self.index2word))
+        print('embeding shape: ', self.index2vector.shape)
         return  datasets
 
 
@@ -364,12 +368,14 @@ class TextDataBeer:
     def read_word2vec_from_pretrained(self, embfile, topk_word_num=-1):
         fopen = gzip.open if embfile.endswith(".gz") else open
         word2index = dict()
-        word2index['PAD'] = 0
-        word2index['START_TOKEN'] = 1
-        word2index['END_TOKEN'] = 2
-        word2index['UNK'] = 3
+        # word2index['PAD'] = 0
+        # word2index['START_TOKEN'] = 1
+        # word2index['END_TOKEN'] = 2
+        # word2index['UNK'] = 3
+        word2index['PAD'] = 1
+        word2index['UNK'] = 0
 
-        cnt = 4
+        cnt = 2
         vectordim = -1
         index2vector = []
         with fopen(embfile, "r") as v:
@@ -386,8 +392,9 @@ class TextDataBeer:
                 word2index[word] = cnt
                 print(word, cnt)
                 cnt += 1
-
-        index2vector = [np.random.normal(size=[vectordim]).astype('float32') for _ in range(cnt)] + index2vector
+        print('before add special token:' , len(index2vector))
+        index2vector = [np.random.normal(size=[vectordim]).astype('float32') for _ in range(2)] + index2vector
+        print('after add special token:' ,len(index2vector))
         index2vector = np.asarray(index2vector)
         index2word = [w for w, n in word2index.items()]
         print(len(word2index), cnt)
@@ -435,10 +442,16 @@ class TextDataBeer:
             return ' '.join([self.index2word[idx] for idx in sequence])
 
         sentence = []
+        # for wordId in sequence:
+        #     if wordId == self.word2index['END_TOKEN']:  # End of generated sentence
+        #         break
+        #     elif wordId != self.word2index['PAD'] and wordId != self.word2index['START_TOKEN']:
+        #         sentence.append(self.index2word[wordId])
+
         for wordId in sequence:
-            if wordId == self.word2index['END_TOKEN']:  # End of generated sentence
+            if wordId == self.word2index['PAD']:  # End of generated sentence
                 break
-            elif wordId != self.word2index['PAD'] and wordId != self.word2index['START_TOKEN']:
+            elif wordId != self.word2index['PAD'] and wordId != self.word2index['PAD']:
                 sentence.append(self.index2word[wordId])
 
         if reverse:  # Reverse means input so no <eos> (otherwise pb with previous early stop)
