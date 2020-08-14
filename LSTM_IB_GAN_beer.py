@@ -20,9 +20,6 @@ from collections import namedtuple
 from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR, \
     ExponentialLR
 
-from common.classifier import Classifier
-from common.generator import IndependentGenerator
-
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -128,12 +125,6 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         self.criterion = nn.MSELoss(reduction='none')
 
-        # self.encoder = Classifier(
-        #     embed=self.embedding, hidden_size=args['hiddenSize'], output_size=1,
-        #     dropout=0.1, layer="rcnn")
-        # self.generator = IndependentGenerator(
-        #     embed=self.embedding, hidden_size=args['hiddenSize'],
-        #     dropout=0.1, layer="rcnn")
 
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -232,8 +223,9 @@ class LSTM_IB_GAN_Model(nn.Module):
             z_nero_sampled = en_final
         # z_nero_sampled, _ = torch.max(s_w_feature, dim=1)  # batch hid
 
-        I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1)
+        # I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), dim = 1) * 100
         # I_x_z = sampled_seq[:, :, 1].sum(1)
+        I_x_z = (z_prob * torch.log(z_prob / torch.FloatTensor([0.9999,0.0001]).unsqueeze(0).unsqueeze(1).to(args['device']))+eps).sum(2).sum(1) * 0.01
         # print(sampled_seq[0,:,:], torch.log(z_prob+eps)[0,:,:])
 
         self.sampled_seq = sampled_seq[:, :, 1]
@@ -247,8 +239,8 @@ class LSTM_IB_GAN_Model(nn.Module):
         # print(logpz)
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        # omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
-        omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
+        omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
+        # omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
         # omega = torch.mean(omega)
         # z_nero_sampled = self.dropout(z_nero_sampled)
         output = self.review_scorer_sample(z_nero_sampled)  # batch aspectnum
@@ -260,16 +252,19 @@ class LSTM_IB_GAN_Model(nn.Module):
         optional['mse_best'] = loss_vec_best.mean().item()
         optional['I_x_z'] = I_x_z.mean().item()
         optional['zdiff'] = omega.mean().item()
-
-        num_0, num_c, num_1, total = self.get_z_stats(self.sampled_seq, mask)
-        optional["p0"] = num_0 / float(total)
-        optional["p1"] = num_1 / float(total)
-        optional["selected"] = optional["p1"]
+        try:
+            num_0, num_c, num_1, total = self.get_z_stats(self.sampled_seq, mask)
+            optional["p0"] = num_0 / float(total)
+            optional["p1"] = num_1 / float(total)
+            optional["selected"] = optional["p1"]
+        except:
+            print(optional)
+            exit(0)
 
         return loss_vec,  0.0003 * I_x_z + 0.0006*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
         # return  0, 0,0, 0, 0, 0,self.sampled_seq, 0,0, 0 , main_loss, optional
 
-    def get_z_stats(self, z=None, mask=None):
+    def get_z_stats(self, z=None, mask=None, eps = 1e-6):
         """
         Computes statistics about how many zs are
         exactly 0, continuous (between 0 and 1), or exactly 1.
@@ -280,14 +275,18 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         z = torch.where(mask>0, z, z.new_full([1], 1e2))
 
-        num_0 = (z == 0.).sum().item()
-        num_c = ((z > 0.) & (z < 1.)).sum().item()
-        num_1 = (z == 1.).sum().item()
+        num_0 = (z < eps).sum().item()
+        num_c = (( eps <z) & (z < 1. -eps)).sum().item()
+        num_1 = ((z > 1.-eps) & (z < 1 + eps)).sum().item()
 
         total = num_0 + num_c + num_1
         mask_total = mask.sum().item()
-
-        assert total == mask_total, "total mismatch"
+        try:
+            assert total == mask_total, "total mismatch"
+        except:
+            print(z, mask)
+            print(num_0,num_1,num_c, total, mask_total)
+            assert total == mask_total, "total mismatch"
         return num_0, num_c, num_1, mask_total
 
     def forward(self, x):
@@ -412,7 +411,7 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             D_model.zero_grad()
 
             Gloss_pure, regu, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(torch.log(D_model(z_nero_best)+eps)) + torch.mean(torch.log(D_model(z_nero_sampled.detach())+eps))
+            Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
             # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
             #
@@ -430,7 +429,8 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size(), regu.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
             #- torch.log(D_model(z_nero_sampled)+eps) Gloss_best.mean() +
-            Gloss = Gloss_best.mean() + Gloss_pure.mean() + ((Gloss_pure.detach() +regu - torch.log(D_model(z_nero_sampled).squeeze())) * logpz.sum(1)).mean()
+            G_ganloss = torch.log(D_model(z_nero_sampled).squeeze())
+            Gloss = Gloss_best.mean() + Gloss_pure.mean() +regu.mean()+ ((Gloss_pure.detach() +regu.detach()-G_ganloss.detach()*0.1) * logpz.sum(1)).mean() -G_ganloss.mean()
             # cost_vec = Gloss_pure.detach() + regu
             # Gloss = Gloss_pure.mean() + (cost_vec * logpz.sum(1)).mean(0)
 
@@ -682,7 +682,7 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
 
     model.eval()  # disable dropout
     sent_id, correct, total, macro_prec_total, macro_n = 0, 0, 0, 0, 0
-
+    macro_rec_total , total_should_match, macro_F_total = 0,0, 0
     for mb in get_minibatch(data, batch_size=batch_size, shuffle=False):
         x, targets, reverse_map = prepare_minibatch(
             mb, model.vocab, device=device, sort=True)
@@ -758,11 +758,19 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
                               any(interval[0] <= i < interval[1]
                                   for a in annotations for interval in a))
 
+                should_matched = sum([interval[1]-interval[0] for a in annotations for interval in a])
+
                 precision = matched / (z_ex_nonzero_sum + 1e-9)
+                recall = matched / should_matched
+                F = 2*precision*recall / (precision + recall)
 
                 macro_prec_total += precision
+                macro_rec_total += recall
+                macro_F_total += F
+
                 correct += matched
                 total += z_ex_nonzero_sum
+                total_should_match += should_matched
                 if z_ex_nonzero_sum > 0:
                     macro_n += 1
 
@@ -773,7 +781,10 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
     # print("new correct", correct, "total", total)
 
     precision = correct / (total + 1e-9)
+    recall = correct / (total_should_match + 1e-9)
     macro_precision = macro_prec_total / (float(macro_n) + 1e-9)
+    macro_recall = macro_rec_total / (float(macro_n) + 1e-9)
+    macro_F = macro_F_total / (float(macro_n) + 1e-9)
 
     try:
         ft.close()
@@ -781,9 +792,11 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
     except IOError:
         print("Error closing file(s)")
 
-    return precision, macro_precision
+    return precision, macro_precision, recall,macro_recall, macro_F
 
 def test2(model,test_data):
-    test_precision, test_macro_prec = evaluate_rationale(model, test_data, aspect=0,device=args['device'], path='./record.txt', batch_size=256)
+    test_precision, test_macro_prec, test_recall, test_macro_recall,macro_F = evaluate_rationale(model, test_data, aspect=0,device=args['device'], path='./record.txt', batch_size=256)
 
-    print('Rational: ', test_precision, test_macro_prec)
+    print('Rational: P_micro: ', test_precision, 'P_macro: ', test_macro_prec)
+    print('Rational: R_micro: ', test_recall, 'R_macro: ', test_macro_recall)
+    print('Rational: F_micro: ', 2*test_precision*test_recall, 'F_macro: ', macro_F)
