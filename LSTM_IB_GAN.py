@@ -197,12 +197,17 @@ class LSTM_IB_GAN_Model(nn.Module):
         recon_loss = self.NLLloss(output, self.classifyLabels).to(args['device'])
         recon_loss_mean = recon_loss#  torch.mean(recon_loss, 1).to(args['device'])
 
-        tt = torch.stack([recon_loss_mean, recon_loss_mean_all, I_x_z, omega])
+        tt = torch.stack([recon_loss_mean.mean(), recon_loss_mean_all.mean(), I_x_z.mean(), omega.mean()])
         wordnum = torch.sum(mask, dim=1)
         sampled_num = torch.sum(sampled_seq[:,:,1], dim = 1) # batch
         sampled_num = (sampled_num == 0).float()  + sampled_num
+        optional = {}
+        optional["recon_loss"] = recon_loss_mean.mean().item()  # [1]
+        optional['recon_best'] = recon_loss_mean_all.mean().item()
+        optional['I_x_z'] = I_x_z.mean().item()
+        optional['zdiff'] = omega.mean().item()
 
-        return recon_loss_mean , recon_loss_mean_all , 0.009 * I_x_z + 0.005*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
+        return recon_loss_mean , recon_loss_mean_all , 0.001 * I_x_z + 0.005*omega, z_nero_best, z_nero_sampled, output, sampled_seq, sampled_num/wordnum, logpz, tt
 
 
     def forward(self, x):
@@ -215,7 +220,7 @@ class LSTM_IB_GAN_Model(nn.Module):
 
 
 def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
-          learning_rate=0.001, n_critic=5):
+          learning_rate=0.001, n_critic=5, eps = 1e-6):
     start = time.time()
     plot_losses = []
     print_Gloss_total = 0  # Reset every print_every
@@ -265,7 +270,7 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
                 x['labels'] = x['labels'][:, 0]
 
             Gloss_pure,Gloss_best, regu, z_nero_best, z_nero_sampled, logpz, tt = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
+            Dloss = -torch.mean(torch.log(D_model(z_nero_best)+eps)) + torch.mean(torch.log(D_model(z_nero_sampled.detach())+eps))
 
             Dloss.backward(retain_graph=True)
 
@@ -279,7 +284,9 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             # -----------------
             G_optimizer.zero_grad()
             # print(Gloss_pure.size() , D_model(z_nero_sampled).size() , logpz.size())
-            Gloss = Gloss_best.mean() + Gloss_pure.mean() + ((Gloss_pure.detach() + regu - torch.log(D_model(z_nero_sampled).squeeze())) * logpz.sum(1)).mean()
+            G_ganloss = torch.log(D_model(z_nero_sampled).squeeze())
+            Gloss = Gloss_best.mean() + Gloss_pure.mean() + regu.mean() - G_ganloss.mean() + ((Gloss_pure.detach() + regu.detach() - G_ganloss.detach()) * logpz.sum(1)).mean()
+            # Gloss = Gloss_best.mean() + Gloss_pure.mean()+  (regu - torch.log(D_model(z_nero_sampled).squeeze()+eps) ).mean()
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
 
