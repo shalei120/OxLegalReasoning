@@ -204,7 +204,7 @@ class LSTM_IB_GAN_Model(nn.Module):
             sampled_seq_soft = sampled_seq_soft.reshape((self.batch_size, self.seqlen, 2))
             sampled_seq = sampled_seq * mask.unsqueeze(2)
             sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
-            sampled_seq = sampled_seq.detach()
+            # sampled_seq = sampled_seq.detach()
         else:
             print('Evaluating...')
             sampled_seq = (z_prob >= 0.5).float()
@@ -239,8 +239,8 @@ class LSTM_IB_GAN_Model(nn.Module):
         # print(logpz)
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
-        # omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
+        # omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
+        omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
         # omega = torch.mean(omega)
         # z_nero_sampled = self.dropout(z_nero_sampled)
         output = self.review_scorer_sample(z_nero_sampled)  # batch aspectnum
@@ -261,7 +261,7 @@ class LSTM_IB_GAN_Model(nn.Module):
             print(optional)
             exit(0)
 
-        return loss_vec,  0.0003 * I_x_z + 0.0006*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
+        return loss_vec,  0.0003 * I_x_z, 0.06*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
         # return  0, 0,0, 0, 0, 0,self.sampled_seq, 0,0, 0 , main_loss, optional
 
     def get_z_stats(self, z=None, mask=None, eps = 1e-6):
@@ -290,11 +290,11 @@ class LSTM_IB_GAN_Model(nn.Module):
         return num_0, num_c, num_1, mask_total
 
     def forward(self, x):
-        losses,regu,best_loss, z_nero_best, z_nero_sampled, _, _,pz, optional = self.build(x)
-        return losses,regu,best_loss, z_nero_best, z_nero_sampled,pz, optional
+        losses,I, om,best_loss, z_nero_best, z_nero_sampled, _, _,pz, optional = self.build(x)
+        return losses,I, om,best_loss, z_nero_best, z_nero_sampled,pz, optional
 
     def predict(self, x):
-        _, _,_, _, _, output,sampled_words, _, _  = self.build(x)
+        _, _,_,_, _, _, output,sampled_words, _, _  = self.build(x)
         return output, sampled_words
 
 def xavier_uniform_n_(w, gain=1., n=4):
@@ -410,7 +410,7 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             G_model.zero_grad()
             D_model.zero_grad()
 
-            Gloss_pure, regu, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
+            Gloss_pure, I, om, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
             Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
             # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
@@ -430,7 +430,8 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
             #- torch.log(D_model(z_nero_sampled)+eps) Gloss_best.mean() +
             G_ganloss = torch.log(D_model(z_nero_sampled).squeeze())
-            Gloss = Gloss_best.mean() + Gloss_pure.mean() +regu.mean()+ ((Gloss_pure.detach() +regu.detach()-G_ganloss.detach()*0.1) * logpz.sum(1)).mean() -G_ganloss.mean()
+            Gloss = Gloss_best.mean() + Gloss_pure.mean() +10*I.mean()+om.mean()\
+                    + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() -G_ganloss.mean()
             # cost_vec = Gloss_pure.detach() + regu
             # Gloss = Gloss_pure.mean() + (cost_vec * logpz.sum(1)).mean(0)
 
@@ -761,8 +762,8 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
                 should_matched = sum([interval[1]-interval[0] for a in annotations for interval in a])
 
                 precision = matched / (z_ex_nonzero_sum + 1e-9)
-                recall = matched / should_matched
-                F = 2*precision*recall / (precision + recall)
+                recall = matched /(should_matched+ 1e-9)
+                F = 2*precision*recall / (precision + recall + 1e-9)
 
                 macro_prec_total += precision
                 macro_rec_total += recall
