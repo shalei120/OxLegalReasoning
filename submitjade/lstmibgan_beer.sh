@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --nodes=2
-#SBATCH --partition=small
+#SBATCH --nodes=1
+#SBATCH --partition=devel
 #SBATCH --job-name=LegalReasoning
 #SBATCH --gres=gpu:1
 
