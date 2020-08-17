@@ -247,7 +247,7 @@ class TextDataBeer:
             dataset = {'train': [], 'dev':[], 'test':[]}
 
             self.word2index, self.index2word, self.index2vector = self.read_word2vec_from_pretrained(self.embfile,
-                                                                                                     topk_word_num=40000)
+                                                                                                     topk_word_num=-1)
             self.index2word_set = set(self.index2word)
 
             with open(self.corpus_file_train, 'r',encoding="utf-8") as rhandle:
