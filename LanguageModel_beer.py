@@ -167,7 +167,8 @@ class LanguageModel(nn.Module):
         ys = []
         for ind in range(seqlen-1)[::-1]:
             m = mask_out[ind,:].unsqueeze(-1)
-            y = target_embs[ind,:]
+            y = target_embs[ind,:,:]
+            # print(target_embs.size(),y.size(), y_iter.size(), m.size())
             y_iter = m * y + (1-m) * y_iter
             ys.append(y_iter)
         ys = torch.stack(ys[::-1]) # s b h
