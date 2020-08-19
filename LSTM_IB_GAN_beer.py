@@ -183,7 +183,8 @@ class LSTM_IB_GAN_Model(nn.Module):
         output_all = self.review_scorer_best(z_nero_best)  # batch 5
         # recon_loss_all = (output_all - self.scores) ** 2
         # recon_loss_mean_all = recon_loss_all[:, args['aspect']]
-        loss_mat_best = self.criterion(output_all, self.scores[:, args['aspect']].unsqueeze(1))
+        loss_mat_best = self.criterion(output_all, self.scores)
+        # print(loss_mat_best.size())
         loss_vec_best = loss_mat_best.mean(1)
 
 
@@ -206,7 +207,7 @@ class LSTM_IB_GAN_Model(nn.Module):
             sampled_seq_soft = sampled_seq_soft * mask.unsqueeze(2)
             # sampled_seq = sampled_seq.detach()
         else:
-            print('Evaluating...')
+            # print('Evaluating...')
             sampled_seq = (z_prob >= 0.5).float()
         # print(sampled_seq)
 
@@ -239,12 +240,13 @@ class LSTM_IB_GAN_Model(nn.Module):
         # print(logpz)
         # print(I_x_z)
         # en_hidden, en_cell = en_state   #2 batch hid
-        # omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
-        omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
+        omega = torch.sum(torch.abs(sampled_seq[:,:-1,1] - sampled_seq[:,1:,1]), dim = 1)
+        # omega = self.LM.LMloss(sampled_seq[:, :, 1], x['enc_input'])
         # omega = torch.mean(omega)
         # z_nero_sampled = self.dropout(z_nero_sampled)
         output = self.review_scorer_sample(z_nero_sampled)  # batch aspectnum
-        loss_mat = self.criterion(output, self.scores[:,args['aspect']].unsqueeze(1))
+        loss_mat = self.criterion(output, self.scores)
+        # print(loss_mat.size(),output.size(), self.scores.size())
         # recon_loss = (output - self.scores)**2
         # recon_loss_mean = recon_loss[:, args['aspect']]
         loss_vec = loss_mat.mean(1)  # [B]
@@ -261,7 +263,7 @@ class LSTM_IB_GAN_Model(nn.Module):
             print(optional)
             exit(0)
 
-        return loss_vec,  0.0003 * I_x_z, 0.06*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
+        return loss_vec,  0.0003 * I_x_z, 0.0006*omega , loss_vec_best , z_nero_best, z_nero_sampled, output, self.sampled_seq, logpz, optional
         # return  0, 0,0, 0, 0, 0,self.sampled_seq, 0,0, 0 , main_loss, optional
 
     def get_z_stats(self, z=None, mask=None, eps = 1e-6):
@@ -340,7 +342,7 @@ def initialize_model_(model):
 
 def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=50, plot_every=10,
           learning_rate=0.001, n_critic=5, eps = 1e-6):
-    test_data = beer_annotations_reader('../beer/annotations.json', aspect=0)
+    test_data = beer_annotations_reader('../beer/annotations.json', aspect=args['aspect'] )
     start = time.time()
     plot_losses = []
     print_Gloss_total = 0  # Reset every print_every
@@ -384,7 +386,11 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
     max_p = -1
     # accuracy = test(textData, G_model, 'test', max_p)
 
-    test2(G_model, test_data)
+    record_graph=True
+    if record_graph:
+        record_file = open('./record_' + str(args['aspect'])+'_'+args['device']+'_.txt', 'w+')
+
+    # test2(G_model, test_data)
     for epoch in range(args['numEpochs']):
         Glosses = []
         Dlosses = []
@@ -404,14 +410,14 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             x = {}
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = torch.LongTensor(batch.encoder_lens).to(args['device'])
-            x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
-
+            x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)[:,args['aspect']].unsqueeze(1)).to(args['device'])
+            # print(x['labels'].size())
             G_model.train()
             G_model.zero_grad()
             D_model.zero_grad()
 
             Gloss_pure, I, om, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(torch.log(D_model(z_nero_best))) + torch.mean(torch.log(D_model(z_nero_sampled.detach())))
+            Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled.detach()))
             # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
             #
@@ -429,9 +435,9 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size(), regu.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
             #- torch.log(D_model(z_nero_sampled)+eps) Gloss_best.mean() +
-            G_ganloss = torch.log(D_model(z_nero_sampled).squeeze())
+            G_ganloss = D_model(z_nero_sampled).squeeze()
             Gloss = Gloss_best.mean() + Gloss_pure.mean() +10*I.mean()+om.mean()\
-                    + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() -G_ganloss.mean()
+                    + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() - G_ganloss.mean()
             # cost_vec = Gloss_pure.detach() + regu
             # Gloss = Gloss_pure.mean() + (cost_vec * logpz.sum(1)).mean(0)
 
@@ -459,6 +465,15 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
                 print('%s (%d %d%%) %.4f %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
                                                   iter, iter / n_iters * 100, print_Gloss_avg, print_Dloss_avg), end='')
                 print(optional)
+
+                path = "./tmp.txt"
+                test_precision, test_macro_prec, recall, macro_recall, macro_F = evaluate_rationale(
+                    G_model, test_data, aspect=args['aspect'],
+                    device=args['device'], path=path, batch_size=args['batchSize'])
+                record_file.write(
+                    str(optional['mse_sp']) + '\t' + str(test_precision) + '\t' + str(test_macro_prec) + '\t' + str(
+                        recall) + '\t' + str(macro_recall) + '\t' + str(optional['mse_best']) +'\n')
+                record_file.flush()
 
             if iter % plot_every == 0:
                 plot_loss_avg = plot_Gloss_total / plot_every
@@ -509,7 +524,7 @@ def test(textData, model, datasetname, max_accuracy):
             x = {}
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = torch.LongTensor(batch.encoder_lens).to(args['device'])
-            x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)).to(args['device'])
+            x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)[:,args['aspect']].unsqueeze(1)).to(args['device'])
 
             output_probs, sampled_words = model.predict(x)
             if not pppt:
@@ -522,7 +537,7 @@ def test(textData, model, datasetname, max_accuracy):
 
 
             batch_correct = (output_probs.cpu().numpy() - x['labels'].cpu().numpy())**2
-            batch_correct = batch_correct[:, args['aspect']]
+            # batch_correct = batch_correct[:, args['aspect']]
             # print(output_labels.size(), torch.LongTensor(batch.label).size())
             # right += sum(batch_correct[:, args['aspect']])
             MSEloss = (MSEloss * total + batch_correct.sum(axis = 0) ) / (total + x['enc_input'].size()[0])
@@ -547,28 +562,6 @@ def test(textData, model, datasetname, max_accuracy):
 
 
     return MSEloss, total_prec, 0
-
-def beer_reader(path, aspect=-1, max_len=0):
-    """
-    Reads in Beer multi-aspect sentiment data
-    :param path:
-    :param aspect: which aspect to train/evaluate (-1 for all)
-    :return:
-    """
-
-    BeerExample = namedtuple("Example", ["tokens", "scores"])
-    with gzip.open(path, 'rt', encoding='utf-8') as f:
-        for line in f:
-            parts = line.split()
-            scores = list(map(float, parts[:5]))
-
-            if aspect > -1:
-                scores = [scores[aspect]]
-
-            tokens = parts[5:]
-            if max_len > 0:
-                tokens = tokens[:max_len]
-            yield BeerExample(tokens=tokens, scores=scores)
 
 
 def beer_annotations_reader(path, aspect=-1):
@@ -745,10 +738,6 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
                     example.append(decorate_token(ti, zi))
 
                 # write this sentence
-                ft.write(" ".join(example))
-                ft.write("\n")
-                fz.write(" ".join(["%.4f" % zi for zi in z_ex]))
-                fz.write("\n")
 
                 # skip if no gold rationale for this sentence
                 if aspect >= 0 and len(annotations[0]) == 0:
@@ -764,6 +753,12 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
                 precision = matched / (z_ex_nonzero_sum + 1e-9)
                 recall = matched /(should_matched+ 1e-9)
                 F = 2*precision*recall / (precision + recall + 1e-9)
+
+
+                ft.write(str(recall) + '\t' + " ".join(example))
+                ft.write("\n")
+                fz.write(" ".join(["%.4f" % zi for zi in z_ex]))
+                fz.write("\n")
 
                 macro_prec_total += precision
                 macro_rec_total += recall
@@ -796,7 +791,8 @@ def evaluate_rationale(model, data, aspect=None, batch_size=256, device=None,
     return precision, macro_precision, recall,macro_recall, macro_F
 
 def test2(model,test_data):
-    test_precision, test_macro_prec, test_recall, test_macro_recall,macro_F = evaluate_rationale(model, test_data, aspect=0,device=args['device'], path='./record.txt', batch_size=256)
+    # print(type(args['aspect']))
+    test_precision, test_macro_prec, test_recall, test_macro_recall,macro_F = evaluate_rationale(model, test_data, aspect=args['aspect'],device=args['device'], path='./rationale_'+str(args['aspect'])+ '_'+args['device']+'_.txt', batch_size=256)
 
     print('Rational: P_micro: ', test_precision, 'P_macro: ', test_macro_prec)
     print('Rational: R_micro: ', test_recall, 'R_macro: ', test_macro_recall)
