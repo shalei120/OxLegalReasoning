@@ -92,6 +92,7 @@ class TextDataBeer:
             batch.encoder_lens.append(len(batch.encoderSeqs[i]))
             batch.label.append(y)
             batch.rationals.append(rational)
+            # print(y)
 
         maxlen_enc = max(batch.encoder_lens)
 
