@@ -42,9 +42,8 @@ class Discriminator(nn.Module):
         self.NLLloss = torch.nn.NLLLoss(reduction='none')
         self.disc = nn.Sequential(
             nn.Linear(args['hiddenSize'], args['hiddenSize']),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.Tanh(),
             nn.Linear(args['hiddenSize'], 1),
-            nn.LeakyReLU(0.2, inplace=True),
             nn.Sigmoid(),
         ).to(args['device'])
 
@@ -257,8 +256,11 @@ class LSTM_IB_GAN_Model(nn.Module):
         try:
             num_0, num_c, num_1, total = self.get_z_stats(self.sampled_seq, mask)
             optional["p0"] = num_0 / float(total)
+            optional["pc"] = num_c / float(total)
             optional["p1"] = num_1 / float(total)
-            optional["selected"] = optional["p1"]
+            optional["p>0.5"]= (z_prob[:, :, 1]*mask > 0.5).sum().item()/ float(total)
+            optional["p<0.5"]= (z_prob[:, :, 0]*mask > 0.5).sum().item()/ float(total)
+            optional["selected"] = optional["p1"]+ optional["pc"]
         except:
             print(optional)
             exit(0)
@@ -342,6 +344,8 @@ def initialize_model_(model):
 
 def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=50, plot_every=10,
           learning_rate=0.001, n_critic=5, eps = 1e-6):
+
+    train_data = list(beer_reader('../beer/reviews.aspect'+str(args["aspect"])+'.train.txt.gz', aspect=args["aspect"], max_len=500))
     test_data = beer_annotations_reader('../beer/annotations.json', aspect=args['aspect'] )
     start = time.time()
     plot_losses = []
@@ -390,6 +394,7 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
     if record_graph:
         record_file = open('./record_' + str(args['aspect'])+'_'+args['device']+'_.txt', 'w+')
 
+    # mb_list = list(get_minibatch(train_data))
     # test2(G_model, test_data)
     for epoch in range(args['numEpochs']):
         Glosses = []
@@ -411,13 +416,35 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             x['enc_input'] = autograd.Variable(torch.LongTensor(batch.encoderSeqs)).to(args['device'])
             x['enc_len'] = torch.LongTensor(batch.encoder_lens).to(args['device'])
             x['labels'] = autograd.Variable(torch.FloatTensor(batch.label)[:,args['aspect']].unsqueeze(1)).to(args['device'])
+            # mb = mb_list[index]
+            #
+            # ax = [pad([textData.word2index.get(t, 3) for t in ex.tokens], 1000) for ex in mb]
+            # ay = [ex.scores for ex in mb]
+            # ax = np.array(ax)
+            # ay = np.array(ay, dtype=np.float32)
+            # ax = torch.from_numpy(ax).to(args['device'])
+            # ay = torch.from_numpy(ay).to(args['device'])
+
+            # try:
+            #     assert ax == x['enc_input']
+            #     assert  ay == x['labels']
+            # except:
+            #     print(ay[:10])
+            #     print('fuck:', x['labels'][:10])
+            #     print(mb[0].tokens)
+            #     print(batch.raw[0])
+            #     assert ax == x['enc_input']
+            #     assert  ay == x['labels']
+
+
             # print(x['labels'].size())
             G_model.train()
             G_model.zero_grad()
             D_model.zero_grad()
 
             Gloss_pure, I, om, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
-            Dloss = -torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled.detach()))
+            # Dloss = -torch.mean(torch.log(D_model(z_nero_best).clamp(eps,1))) + torch.mean(torch.log(D_model(z_nero_sampled.detach()).clamp(eps,1)))
+            Dloss = (-torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled.detach())))
             # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
             #
@@ -434,12 +461,30 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             D_model.zero_grad()
             # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size(), regu.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
-            #- torch.log(D_model(z_nero_sampled)+eps) Gloss_best.mean() +
+
+            # G_ganloss = torch.log(D_model(z_nero_sampled).clamp(eps,1).squeeze())
             G_ganloss = D_model(z_nero_sampled).squeeze()
-            Gloss = Gloss_best.mean() + Gloss_pure.mean() +10*I.mean()+om.mean()\
-                    + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() - G_ganloss.mean()
-            # cost_vec = Gloss_pure.detach() + regu
-            # Gloss = Gloss_pure.mean() + (cost_vec * logpz.sum(1)).mean(0)
+            if args['aspect'] == 0:
+                # Gloss = 10*Gloss_best.mean() + 10*Gloss_pure.mean() +5*I.mean()+om.mean()\
+                #     + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() - G_ganloss.mean()
+                Gloss = 10*Gloss_best.mean() + 10*Gloss_pure.mean() +5*I.mean()+om.mean() - G_ganloss.mean()
+            elif args['aspect'] == 1:
+                Gloss = Gloss_best.mean() + Gloss_pure.mean() - G_ganloss.mean() + I.mean()+ 10*om.mean()
+                #+ ((Gloss_pure.detach() +0.5*I.detach()+om.detach()) * logpz.sum(1)).mean()\
+
+                # Gloss = 10*Gloss_best.mean() + 10*Gloss_pure.mean() +5*I.mean()+om.mean()- G_ganloss.mean(
+                # Gloss = Gloss_pure.mean() + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean()
+            elif args['aspect'] == 2:
+                if args['choose'] == 0: # 6
+                    Gloss = Gloss_best.mean() + Gloss_pure.mean() + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() \
+                            - G_ganloss.mean() +I.mean()+om.mean()
+                elif args['choose'] == 1: # 5
+                    Gloss =  Gloss_pure.mean() + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean()
+                elif args['choose'] == 2: # 4
+                    Gloss = Gloss_best.mean() + Gloss_pure.mean() + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() \
+                            - G_ganloss.mean()
+                elif args['choose'] == 3:  # 2
+                    Gloss = Gloss_best.mean() + Gloss_pure.mean() - G_ganloss.mean()+ 10*I.mean()+ 10*om.mean()
 
 
             # print(Gloss_best.mean() , Gloss_pure.mean(),((Gloss_pure.detach() +regu ) * logpz).mean())
@@ -562,6 +607,52 @@ def test(textData, model, datasetname, max_accuracy):
 
 
     return MSEloss, total_prec, 0
+
+def pad(tokens, length, pad_value=0):
+    """add padding 1s to a sequence to that it has the desired length"""
+    return tokens + [pad_value] * (length - len(tokens))
+
+def get_minibatch(data, batch_size=256, shuffle=False):
+    """Return minibatches, optional shuffling"""
+    if shuffle:
+        print("Shuffling training data")
+        random.shuffle(data)  # shuffle training data each epoch
+
+    batch = []
+
+    # yield minibatches
+    for example in data:
+        batch.append(example)
+
+        if len(batch) == batch_size:
+            yield batch
+            batch = []
+
+    # in case there is something left
+    if len(batch) > 0:
+        yield batch
+
+def beer_reader(path, aspect=-1, max_len=0):
+
+    BeerExample = namedtuple("Example", ["tokens", "scores"])
+    """
+    Reads in Beer multi-aspect sentiment data
+    :param path:
+    :param aspect: which aspect to train/evaluate (-1 for all)
+    :return:
+    """
+    with gzip.open(path, 'rt', encoding='utf-8') as f:
+        for line in f:
+            parts = line.split()
+            scores = list(map(float, parts[:5]))
+
+            if aspect > -1:
+                scores = [scores[aspect]]
+
+            tokens = parts[5:]
+            if max_len > 0:
+                tokens = tokens[:max_len]
+            yield BeerExample(tokens=tokens, scores=scores)
 
 
 def beer_annotations_reader(path, aspect=-1):
