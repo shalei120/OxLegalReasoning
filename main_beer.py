@@ -8,11 +8,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
 parser.add_argument('--modelarch', '-m')
 parser.add_argument('--aspect', '-a')
+parser.add_argument('--choose', '-c')
 cmdargs = parser.parse_args()
 print(cmdargs)
 usegpu = True
 if cmdargs.gpu is None:
     usegpu = False
+
+    args['device'] = 'cpu'
 else:
     usegpu = True
     args['device'] = 'cuda:' + str(cmdargs.gpu)
@@ -26,6 +29,10 @@ if cmdargs.aspect is None:
     args['aspect'] = 0
 else:
     args['aspect'] = int(cmdargs.aspect)
+if cmdargs.choose is None:
+    args['choose'] = 0
+else:
+    args['choose'] = int(cmdargs.aspect)
 
 import functools
 print = functools.partial(print, flush=True)
@@ -51,7 +58,6 @@ from LanguageModel_beer import LanguageModel
 
 import LSTM_IB_GAN_beer
 
-print(args)
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -75,7 +81,7 @@ class Runner:
 
         if args['model_arch'] in ['lstmibgan']:
             args['classify_type'] = 'single'
-            args['batchSize'] = 128
+            args['batchSize'] = 256
 
         self.textData = TextDataBeer('beer')
         # self.start_token = self.textData.word2index['START_TOKEN']
@@ -86,7 +92,9 @@ class Runner:
         print(self.textData.getVocabularySize())
         args['model_arch'] = 'lstmibgan'
         # args['aspect'] = 0
-        # args['hiddenSize'] = 160
+        args['hiddenSize'] = 200
+
+        print(args)
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
             LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])

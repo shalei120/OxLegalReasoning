@@ -22,6 +22,7 @@ class Batch:
         self.targetSeqs = []
         self.decoder_lens = []
         self.rationals = []
+        self.raw = []
 
 
 class TextDataBeer:
@@ -30,7 +31,8 @@ class TextDataBeer:
     """
 
 
-    def __init__(self, corpusname):
+    def __init__(self, corpusname, trainLM =False):
+
         """Load all conversations
         Args:
             args: parameters of the model
@@ -43,8 +45,10 @@ class TextDataBeer:
             self.tokenizer = word_tokenize
 
         self.trainingSamples = []  # 2d array containing each question and his answer [[input,target]]
-
-        self.datasets= self.loadCorpus_Beer()
+        if not trainLM:
+            self.datasets= self.loadCorpus_Beer()
+        else:
+            self.datasets = self.load3aspects()
 
 
         print('set')
@@ -92,6 +96,7 @@ class TextDataBeer:
             batch.encoder_lens.append(len(batch.encoderSeqs[i]))
             batch.label.append(y)
             batch.rationals.append(rational)
+            batch.raw.append(raw_sen)
             # print(y)
 
         maxlen_enc = max(batch.encoder_lens)
@@ -109,7 +114,7 @@ class TextDataBeer:
             list<Batch>: Get a list of the batches for the next epoch
         """
         if setname not in self.batches:
-            self.shuffle()
+            # self.shuffle()
 
             batches = []
             print(setname, 'size:', len(self.datasets[setname]))
@@ -153,7 +158,7 @@ class TextDataBeer:
                 sen_ids = sen_ids[:args['maxLengthEnco']]
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
-            batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']]) 
+            batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']])
 
         # print(batch.decoderSeqs)
         # print(batch.decoder_lens)
@@ -232,11 +237,11 @@ class TextDataBeer:
         """Load/create the conversations data
         """
         self.basedir = '../beer/'
-        self.corpus_file_train = self.basedir + 'reviews.aspect0.train.txt'
-        self.corpus_file_dev =  self.basedir + 'reviews.aspect0.heldout.txt'
+        self.corpus_file_train = self.basedir + 'reviews.aspect'+str(args['aspect'])+'.train.txt'
+        self.corpus_file_dev =  self.basedir + 'reviews.aspect'+str(args['aspect'])+'.heldout.txt'
         self.corpus_file_test =  self.basedir + 'annotations.json'
         self.embfile = self.basedir + 'review+wiki.filtered.200.txt.gz'
-        self.data_dump_path = args['rootDir'] + '/Beerdata.pkl'
+        self.data_dump_path = args['rootDir'] + '/Beerdata'+str(args['aspect'])+'.pkl'
 
         print(self.data_dump_path)
         datasetExist = os.path.isfile(self.data_dump_path)
@@ -345,6 +350,18 @@ class TextDataBeer:
         print('embeding shape: ', self.index2vector.shape)
         return  datasets
 
+    def load3aspects(self):
+        self.data_dump_path1 = args['rootDir'] + '/Beerdata0.pkl'
+        self.data_dump_path2 = args['rootDir'] + '/Beerdata1.pkl'
+        self.data_dump_path3 = args['rootDir'] + '/Beerdata2.pkl'
+        d1 = self.loadDataset(self.data_dump_path1)
+        d2 = self.loadDataset(self.data_dump_path2)
+        d3 = self.loadDataset(self.data_dump_path3)
+        data={'train':[], 'dev':[], 'test':[]}
+        data['train']=d1['train']+d2['train']+d3['train']
+        data['dev']=d1['dev']+d2['dev']+d3['dev']
+        data['test']=d1['test']
+        return data
 
     def read_word2vec(self, vocfile ):
         word2index = dict()

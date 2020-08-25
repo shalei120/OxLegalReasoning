@@ -11,4 +11,4 @@ module load gpu/cuda/9.2.148
 #nvidia-smi
 echo $PWD
 # run the application
-python3 main.py -m lstmibgan -s small  > slurm-charge_small_model-$SLURM_JOB_ID.out
+python3 main_small.py -m lstmibgan -s small  > slurm-charge_small_model-$SLURM_JOB_ID.out
