@@ -152,6 +152,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         # z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
         # print(z_nero_best.size())
         output_all = self.ChargeClassifier(z_nero_best).to(args['device'])  # batch chargenum
+        # print(output_all.size(), self.classifyLabels.size())
         recon_loss_all = self.NLLloss(output_all, self.classifyLabels).to(args['device'])
         recon_loss_mean_all = recon_loss_all #torch.mean(recon_loss_all, 1).to(args['device'])
         # try:
@@ -291,8 +292,16 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             G_ganloss = torch.log(D_model(z_nero_sampled).clamp(eps,1).squeeze())
             # Gloss = Gloss_best.mean() + Gloss_pure.mean() + 0.1*I.mean() + om.mean() - G_ganloss.mean() + ((0.01*Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
             # Gloss = Gloss_best.mean() + Gloss_pure.mean()+  (regu - torch.log(D_model(z_nero_sampled).squeeze()+eps) ).mean()
-            Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() + om.mean() - G_ganloss.mean() + (
+            if args['choose'] == 0:
+                Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() + om.mean() - G_ganloss.mean() + (
                     (0.01 * Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
+            elif args['choose'] == 1:
+                Gloss = 10 * Gloss_pure.mean()
+            elif args['choose'] == 2:
+                Gloss = 10 * Gloss_pure.mean() + 80 * I.mean()
+            elif args['choose'] == 3:
+                Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() - G_ganloss.mean() + (
+                    (0.01 * Gloss_pure.detach() + I.detach()) * logpz.sum(1)).mean()
 
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
