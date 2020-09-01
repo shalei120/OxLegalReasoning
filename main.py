@@ -39,7 +39,7 @@ from LSTM_GMIB import LSTM_GMIB_Model
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', '-g')
 parser.add_argument('--modelarch', '-m')
-parser.add_argument('--size', '-s')
+parser.add_argument('--choose', '-c')
 cmdargs = parser.parse_args()
 
 usegpu = True
@@ -55,10 +55,10 @@ if cmdargs.modelarch is None:
 else:
     args['model_arch'] = cmdargs.modelarch
 
-if cmdargs.size is None:
-    args['datasetsize'] = 'big'
+if cmdargs.choose is None:
+    args['choose'] = 0
 else:
-    args['datasetsize'] = cmdargs.size
+    args['choose'] = int(cmdargs.choose)
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -79,7 +79,7 @@ class Runner:
         self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch'] + '.mdl'
 
     def main(self):
-
+        args['datasetsize'] = 'big'
         if args['model_arch'] in ['lstmgrid']:
             args['batchSize'] = 64
         elif args['model_arch'] in ['lstmibgan']:
