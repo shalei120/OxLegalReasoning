@@ -369,9 +369,10 @@ def test(textData, model, datasetname, max_accuracy):
             output_labels, sampled_words, wordsamplerate = output_labels
             if not pppt:
                 pppt = True
-                for w, choice in zip(batch.encoderSeqs[0], sampled_words[0]):
+                pind = np.random.choice(x['enc_input'].size()[0].item())
+                for w, choice in zip(batch.encoderSeqs[pind], sampled_words[pind]):
                     if choice[1] == 1:
-                        print('<',textData.index2word[w],'>', end='')
+                        print('<', textData.index2word[w], '>', end='')
                     else:
                         print(textData.index2word[w], end='')
 
