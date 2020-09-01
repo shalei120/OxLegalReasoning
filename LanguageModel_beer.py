@@ -295,10 +295,10 @@ if __name__ == '__main__':
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
     # args['maxLengthDeco'] = args['maxLength'] + 1
-    textData = TextDataBeer('beer')
+    textData = TextDataBeer('beer', trainLM = True)
     args['vocabularySize'] = textData.getVocabularySize()
     args['chargenum'] = 5
     args['embeddingSize'] = textData.index2vector.shape[1]
 
     model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
-    train(textData, model, model_path = args['rootDir']+'/LMbeer.pkl')
+    train(textData, model, model_path = args['rootDir']+'/LMbeer3.pkl')

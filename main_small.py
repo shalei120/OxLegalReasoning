@@ -27,7 +27,7 @@ from LanguageModel import LanguageModel
 from LSTM import LSTM_Model
 from LSTM_att import LSTM_att_Model
 from LSTM_IB import LSTM_IB_Model
-import LSTM_IB_GAN
+import LSTM_IB_GAN_small
 from LSTM_IB_complete import LSTM_IB_CP_Model
 from Transformer import TransformerModel
 from LSTM_capIB import LSTM_capsule_IB_Model
@@ -55,6 +55,7 @@ if cmdargs.modelarch is None:
 else:
     args['model_arch'] = cmdargs.modelarch
 
+
 if cmdargs.choose is None:
     args['choose'] = 0
 else:
@@ -79,7 +80,8 @@ class Runner:
         self.model_path = args['rootDir'] + '/chargemodel_' + args['model_arch'] + '.mdl'
 
     def main(self):
-        args['datasetsize'] = 'big'
+
+        args['datasetsize'] = 'small'
         if args['model_arch'] in ['lstmgrid']:
             args['batchSize'] = 64
         elif args['model_arch'] in ['lstmibgan']:
@@ -130,7 +132,7 @@ class Runner:
             for param in LM.parameters():
                 param.requires_grad = False
 
-            LSTM_IB_GAN.train(self.textData, LM)
+            LSTM_IB_GAN_small.train(self.textData, LM)
         elif args['model_arch'] == 'lstmibcp':
             print('Using LSTM information bottleneck model. -- complete words')
             self.model = LSTM_IB_CP_Model(self.textData.word2index, self.textData.index2word)

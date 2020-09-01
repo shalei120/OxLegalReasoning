@@ -36,7 +36,7 @@ class Discriminator(nn.Module):
         print('Discriminator creation...')
         self.NLLloss = torch.nn.NLLLoss(reduction='none')
         self.disc = nn.Sequential(
-            nn.Linear(args['hiddenSize'], 1),
+            nn.Linear(args['hiddenSize']*2, 1),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Sigmoid(),
         ).to(args['device'])
@@ -78,9 +78,9 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         self.embedding = LM.embedding
 
-        self.encoder_all = Encoder(w2i, i2w, self.embedding).to(args['device'])
+        self.encoder_all = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
         self.encoder_select = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
-        self.encoder_mask = Encoder(w2i, i2w, self.embedding).to(args['device'])
+        self.encoder_mask = Encoder(w2i, i2w, self.embedding, bidirectional = True).to(args['device'])
 
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=-1)
@@ -88,14 +88,14 @@ class LSTM_IB_GAN_Model(nn.Module):
         self.x_2_prob_z = nn.Sequential(
             nn.Linear(args['hiddenSize'] * 2, 2)
         ).to(args['device'])
-        self.z_to_fea = nn.Linear(args['hiddenSize'], args['hiddenSize']).to(args['device'])
+        self.z_to_fea = nn.Linear(args['hiddenSize']*2, args['hiddenSize']*2).to(args['device'])
 
         self.ChargeClassifier = nn.Sequential(
-            nn.Linear(args['hiddenSize'], args['chargenum']),
+            nn.Linear(args['hiddenSize']*2, args['chargenum']),
             nn.LogSoftmax(dim=-1)
         ).to(args['device'])
 
-        self.attm = Parameter(torch.rand(args['hiddenSize'], args['hiddenSize'] * 2)).to(args['device'])
+        self.attm = Parameter(torch.rand(args['hiddenSize']*2, args['hiddenSize'] * 4)).to(args['device'])
 
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(args['device'])
@@ -142,7 +142,7 @@ class LSTM_IB_GAN_Model(nn.Module):
         en_hidden, en_cell = en_state  # 2 batch hid
         # print(en_hidden.size())
         en_hidden = en_hidden.transpose(0, 1)
-        en_hidden = en_hidden.reshape(self.batch_size, args['hiddenSize'] * 2)
+        en_hidden = en_hidden.reshape(self.batch_size, args['hiddenSize'] * 4)
         att1 = torch.einsum('bsh,hg->bsg', en_outputs, self.attm)
         att2 = torch.einsum('bsg,bg->bs', att1, en_hidden)
         att2 = self.softmax(att2)
@@ -152,7 +152,6 @@ class LSTM_IB_GAN_Model(nn.Module):
         # z_nero_best, _ = torch.max(z_nero_best, dim=1)  # batch hid
         # print(z_nero_best.size())
         output_all = self.ChargeClassifier(z_nero_best).to(args['device'])  # batch chargenum
-        # print(output_all.size(), self.classifyLabels.size())
         recon_loss_all = self.NLLloss(output_all, self.classifyLabels).to(args['device'])
         recon_loss_mean_all = recon_loss_all #torch.mean(recon_loss_all, 1).to(args['device'])
         # try:
@@ -181,9 +180,7 @@ class LSTM_IB_GAN_Model(nn.Module):
 
         z_prob = self.softmax(z_logit)
         # I_x_z = torch.mean(-torch.log(z_prob[:, :, 0] + eps), 1)
-        I_x_z = (z_prob * torch.log(
-            z_prob / torch.FloatTensor([0.9999, 0.0001]).unsqueeze(0).unsqueeze(1).to(args['device'])) + eps).sum(
-            2).sum(1) * 0.01
+        I_x_z = (z_prob * torch.log(z_prob / torch.FloatTensor([0.9999,0.0001]).unsqueeze(0).unsqueeze(1).to(args['device']))+eps).sum(2).sum(1) * 0.01
 
         logp_z0 = torch.log(z_prob[:, :, 0])  # [B,T], log P(z = 0 | x)
         logp_z1 = torch.log(z_prob[:, :, 1])  # [B,T], log P(z = 1 | x)
@@ -223,8 +220,9 @@ class LSTM_IB_GAN_Model(nn.Module):
         return output, (torch.argmax(output, dim=-1), sampled_words, wordsamplerate)
 
 
-def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.mdl', print_every=10000, plot_every=10,
+def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN_small.mdl', print_every=500, plot_every=10,
           learning_rate=0.001, n_critic=5, eps = 1e-6):
+    print('Using small arch...')
     start = time.time()
     plot_losses = []
     print_Gloss_total = 0  # Reset every print_every
@@ -247,7 +245,6 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
     args['trainseq2seq'] = False
 
     max_accu = -1
-    print_every = 1000 if args['datasetsize'] == 'small' else print_every
 
     # accuracy = test(textData, G_model, 'test', max_accu)
     for epoch in range(args['numEpochs']):
@@ -290,19 +287,21 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             G_optimizer.zero_grad()
             # print(Gloss_pure.size() , D_model(z_nero_sampled).size() , logpz.size())
             G_ganloss = torch.log(D_model(z_nero_sampled).clamp(eps,1).squeeze())
-            # Gloss = Gloss_best.mean() + Gloss_pure.mean() + 0.1*I.mean() + om.mean() - G_ganloss.mean() + ((0.01*Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
-            # Gloss = Gloss_best.mean() + Gloss_pure.mean()+  (regu - torch.log(D_model(z_nero_sampled).squeeze()+eps) ).mean()
             if args['choose'] == 0:
-                Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() + om.mean() - G_ganloss.mean() + (
-                    (0.01 * Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
+                Gloss = 10*Gloss_best.mean() + 10*Gloss_pure.mean() + 80*I.mean() + om.mean() - G_ganloss.mean() #+ ((0.01*Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
             elif args['choose'] == 1:
-                Gloss = 10 * Gloss_pure.mean()
+                Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() + om.mean() - G_ganloss.mean() + (
+                            (0.01 * Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
             elif args['choose'] == 2:
-                Gloss = 10 * Gloss_pure.mean() + 80 * I.mean()
+                Gloss = Gloss_best.mean() + Gloss_pure.mean() + 100 * I.mean() + 100 * om.mean() - G_ganloss.mean()  # + ((0.01*Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
             elif args['choose'] == 3:
-                Gloss = 10 * Gloss_best.mean() + 10 * Gloss_pure.mean() + 80 * I.mean() - G_ganloss.mean() + (
-                    (0.01 * Gloss_pure.detach() + I.detach()) * logpz.sum(1)).mean()
-
+                Gloss =  Gloss_best.mean() + Gloss_pure.mean() + 100*I.mean() + 100*om.mean() - G_ganloss.mean()  + ((0.01*Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
+            elif args['choose'] == 4:
+                Gloss = Gloss_pure.mean()
+            elif args['choose'] == 5:
+                Gloss = 10 * Gloss_pure.mean() + 80 * I.mean() + om.mean() + (
+                            (0.01 * Gloss_pure.detach() + I.detach() + om.detach()) * logpz.sum(1)).mean()
+            # Gloss = Gloss_best.mean() + Gloss_pure.mean()+  (regu - torch.log(D_model(z_nero_sampled).squeeze()+eps) ).mean()
             Gloss.backward(retain_graph=True)
             G_optimizer.step()
 
@@ -332,20 +331,20 @@ def train(textData, LM, model_path=args['rootDir'] + '/chargemodel_LSTM_IB_GAN.m
             iter += 1
             # print(iter, datetime.datetime.now())
 
-        accuracy, MP,MR, F = test(textData, G_model, 'test', max_accu)
-        if accuracy > max_accu or max_accu == -1:
-            print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
-            torch.save([G_model, D_model], model_path)
-            max_accu = accuracy
+        res = test(textData, G_model, 'test', max_accu)
+        # if res['accuracy'] > max_accu or max_accu == -1:
+        #     print('accuracy = ', accuracy, '>= min_accuracy(', max_accu, '), saving model...')
+        #     torch.save([G_model, D_model], model_path)
+        #     max_accu = accuracy
 
-        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid accuracy = ', accuracy,MP,MR, F , 'max accuracy=',
+        print('Epoch ', epoch, 'loss = ', sum(Glosses) / len(Glosses), 'Valid = ', res , 'max accuracy=',
               max_accu)
 
     # self.test()
     # showPlot(plot_losses)
 
 
-def test(textData, model, datasetname, max_accuracy):
+def test(textData, model, datasetname, max_accuracy, eps = 1e-6):
     right = 0
     total = 0
 
@@ -400,13 +399,24 @@ def test(textData, model, datasetname, max_accuracy):
                 if not c:
                     dset.append((batch.encoderSeqs[ind], x['labels'][ind], output_labels[ind]))
 
-    accuracy = right / total
-    P_c = TP_c / (TP_c + FP_c)
-    R_c = TP_c / (TP_c + FN_c)
-    F_c = 2 * P_c * R_c / (P_c + R_c)
-    F_macro = np.nanmean(F_c)
-    MP = np.nanmean(P_c)
-    MR = np.nanmean(R_c)
+
+    res ={}
+
+    res['accuracy'] = right / total
+    P_c = TP_c / (TP_c + FP_c + eps)
+    R_c = TP_c / (TP_c + FN_c + eps)
+    F_c = 2 * P_c * R_c / (P_c + R_c + eps)
+    res['F_macro'] = np.mean(F_c)
+    res['MP'] = np.mean(P_c)
+    res['MR'] = np.mean(R_c)
+
+
+    P_c = TP_c / (TP_c + FP_c )
+    R_c = TP_c / (TP_c + FN_c )
+    F_c = 2 * P_c * R_c / (P_c + R_c )
+    res['F_macro_n ']= np.nanmean(F_c)
+    res['MP_n'] = np.nanmean(P_c)
+    res['MR_n'] = np.nanmean(R_c)
 
     # if accuracy > max_accuracy:
     #     with open(args['rootDir'] + '/error_case_' + args['model_arch'] + '.txt', 'w') as wh:
@@ -419,4 +429,4 @@ def test(textData, model, datasetname, max_accuracy):
     #             wh.write('\n')
     #     wh.close()
 
-    return accuracy, MP, MR, F_macro
+    return res
