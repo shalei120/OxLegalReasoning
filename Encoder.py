@@ -52,8 +52,10 @@ class Encoder(nn.Module):
 
         self.batch_size = self.encoderInputs.size()[0]
         self.enc_len = self.encoderInputs.size()[1]
-
-        enc_input_embed = self.embedding(self.encoderInputs).to(args['device'])#.cuda()   # batch enc_len embedsize  ; already sorted in a decreasing order
+        try:
+            enc_input_embed = self.embedding(self.encoderInputs).to(args['device'])#.cuda()   # batch enc_len embedsize  ; already sorted in a decreasing order
+        except:
+            df=0
         # dec_target_embed = self.embedding(self.decoderTargets).cuda()   # batch dec_len embedsize
 
         en_outputs, en_state = self.encode(enc_input_embed, self.batch_size, mask) # seq batch emb
