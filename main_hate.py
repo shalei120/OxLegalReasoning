@@ -72,9 +72,11 @@ class Runner:
     def main(self):
 
         self.textData = TextDataHate('hate')
-        self.start_token = self.textData.word2index['START_TOKEN']
-        self.end_token = self.textData.word2index['END_TOKEN']
+        self.start_token = self.textData.word2index['[START_TOKEN]']
+        self.end_token = self.textData.word2index['[END_TOKEN]']
         args['vocabularySize'] = self.textData.getVocabularySize()
+
+        args['hiddenSize'] = 200
 
         print(self.textData.getVocabularySize())
 
@@ -88,7 +90,7 @@ class Runner:
 
 
     def indexesFromSentence(self, sentence):
-        return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['UNK']
+        return [self.textData.word2index[word] if word in self.textData.word2index else self.textData.word2index['[UNK]']
                 for word in sentence]
 
     def tensorFromSentence(self, sentence):

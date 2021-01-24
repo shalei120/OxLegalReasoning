@@ -102,7 +102,7 @@ class TextDataHate:
 
 
         for i in range(batchSize):
-            batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['PAD']] * (maxlen_enc - len(batch.encoderSeqs[i]))
+            batch.encoderSeqs[i] = batch.encoderSeqs[i] + [self.word2index['[PAD]']] * (maxlen_enc - len(batch.encoderSeqs[i]))
             ration = torch.zeros([3, maxlen_enc])
             if len(batch.rationals[i]) >0:
                 # try:
@@ -113,7 +113,7 @@ class TextDataHate:
                 real_len = ration_value.size()[1]
                 real_num = ration_value.size()[0]
                 ration[:real_num,:real_len] = ration_value
-            batch.rationals[i] = ration
+            batch.rationals[i] = ration.to(args['device'])
         batch.rationals = torch.stack(batch.rationals) # batch 3 len
 
         return batch
@@ -166,9 +166,9 @@ class TextDataHate:
             sen_ids = samples[i]
             if len(sen_ids) > args['maxLengthEnco']:
                 sen_ids = sen_ids[:args['maxLengthEnco']]
-            batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
+            batch.decoderSeqs.append([self.word2index['[START_TOKEN]']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
-            batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']])
+            batch.targetSeqs.append(sen_ids + [self.word2index['[END_TOKEN]']])
 
         # print(batch.decoderSeqs)
         # print(batch.decoder_lens)
@@ -176,8 +176,8 @@ class TextDataHate:
         maxlen_dec = min(maxlen_dec, args['maxLengthEnco'])
 
         for i in range(batchSize):
-            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['PAD']] * (maxlen_dec - len(batch.decoderSeqs[i]))
-            batch.targetSeqs[i] = batch.targetSeqs[i] + [self.word2index['PAD']] * (maxlen_dec - len(batch.targetSeqs[i]))
+            batch.decoderSeqs[i] = batch.decoderSeqs[i] + [self.word2index['[PAD]']] * (maxlen_dec - len(batch.decoderSeqs[i]))
+            batch.targetSeqs[i] = batch.targetSeqs[i] + [self.word2index['[PAD]']] * (maxlen_dec - len(batch.targetSeqs[i]))
 
         return batch
 
@@ -243,14 +243,19 @@ class TextDataHate:
         return len(self.word2index)
 
 
-    def loadCorpus(self):
+    def loadCorpus(self, use_pretrained_vector = False):
         """Load/create the conversations data
         """
         self.basedir = '../HateXplain/Data/'
         self.corpus_file = self.basedir + 'dataset.json'
         self.corpus_file_split =  self.basedir + 'post_id_divisions.json'
-        self.data_dump_path = args['rootDir'] + '/HateSpeechData.pkl'
-        self.vocfile = args['rootDir'] + '/voc.txt'
+        if use_pretrained_vector:
+            self.vocfile = self.basedir + '/glove.840B.300d.txt'
+            self.data_dump_path = args['rootDir'] + '/HateSpeechData.pkl'
+        else:
+            self.vocfile = args['rootDir'] + '/voc.txt'
+            self.data_dump_path = args['rootDir'] + '/HateSpeechData_noglove.pkl'
+
 
         print(self.data_dump_path)
         datasetExist = os.path.isfile(self.data_dump_path)
@@ -282,33 +287,41 @@ class TextDataHate:
                         y = 1
                     elif count['normal'] >= 2:
                         y = 2
+                    else:
+                        print('1 1 1 error')
+                        exit()
 
                     rationales = case['rationales']
                     dataset[ss].append([sen, y, rationales])
                     total_words.extend(sen)
 
-            fdist = nltk.FreqDist(total_words)
-            sort_count = fdist.most_common(30000)
-            print('sort_count: ', len(sort_count))
-            print(len(set([w for w,c in sort_count])))
-            with open(self.vocfile, "w") as v:
-                for w, c in tqdm(sort_count):
-                    # if nnn > 0:
-                    #     print([(ord(w1),w1) for w1 in w])
-                    #     nnn-= 1
-                    if w not in [' ', '', '\n', '\r', '\r\n'] and ' ' not in w:
-                        v.write(w)
-                        v.write(' ')
-                        v.write(str(c))
-                        v.write('\n')
+            if not use_pretrained_vector:
+                fdist = nltk.FreqDist(total_words)
+                sort_count = fdist.most_common(30000)
+                print('sort_count: ', len(sort_count))
+                print(len(set([w for w,c in sort_count])))
+                with open(self.vocfile, "w") as v:
+                    for w, c in tqdm(sort_count):
+                        # if nnn > 0:
+                        #     print([(ord(w1),w1) for w1 in w])
+                        #     nnn-= 1
+                        if w not in [' ', '', '\n', '\r', '\r\n'] and ' ' not in w:
+                            v.write(w)
+                            v.write(' ')
+                            v.write(str(c))
+                            v.write('\n')
 
-                v.close()
+                    v.close()
+                self.word2index = self.read_word2vec(self.vocfile)
+                sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
+                print('sorted')
+                self.index2word = [w for w, n in sorted_word_index]
+                print('index2word')
+            else:
+                self.word2index, self.index2word, self.index2vector = self.read_word2vec_from_pretrained(self.vocfile, 50000)
+                print('sorted')
+                print('index2word')
 
-            self.word2index = self.read_word2vec(self.vocfile)
-            sorted_word_index = sorted(self.word2index.items(), key=lambda item: item[1])
-            print('sorted')
-            self.index2word = [w for w, n in sorted_word_index]
-            print('index2word')
             self.index2word_set = set(self.index2word)
 
 
@@ -321,14 +334,14 @@ class TextDataHate:
 
             # Saving
             print('Saving dataset...')
-            self.saveDataset(self.data_dump_path, dataset)  # Saving tf samples
+            self.saveDataset(self.data_dump_path, dataset, use_pretrained_vector)  # Saving tf samples
         else:
-            dataset = self.loadDataset(self.data_dump_path)
+            dataset = self.loadDataset(self.data_dump_path, use_pretrained_vector)
             print('loaded')
 
         return  dataset
 
-    def saveDataset(self, filename, datasets):
+    def saveDataset(self, filename, datasets, use_pretrained_vector):
         """Save samples to file
         Args:
             filename (str): pickle filename
@@ -339,10 +352,12 @@ class TextDataHate:
                 'index2word': self.index2word,
                 'datasets': datasets
             }
+            if use_pretrained_vector:
+                data['index2vec'] = self.index2vector
             pickle.dump(data, handle, -1)  # Using the highest protocol available
 
 
-    def loadDataset(self, filename):
+    def loadDataset(self, filename, use_pretrained_vector):
         """Load samples from file
         Args:
             filename (str): pickle filename
@@ -353,6 +368,8 @@ class TextDataHate:
             data = pickle.load(handle)  # Warning: If adding something here, also modifying saveDataset
             self.word2index = data['word2index']
             self.index2word = data['index2word']
+            if use_pretrained_vector:
+                self.index2vector = data['index2vec']
             datasets = data['datasets']
         print('training: \t', len(datasets['train']))
         print('dev: \t', len(datasets['val']))
@@ -364,10 +381,10 @@ class TextDataHate:
 
     def read_word2vec(self, vocfile ):
         word2index = dict()
-        word2index['PAD'] = 0
-        word2index['START_TOKEN'] = 1
-        word2index['END_TOKEN'] = 2
-        word2index['UNK'] = 3
+        word2index['[PAD]'] = 0
+        word2index['[START_TOKEN]'] = 1
+        word2index['[END_TOKEN]'] = 2
+        word2index['[UNK]'] = 3
         cnt = 4
         with open(vocfile, "r") as v:
 
@@ -387,10 +404,10 @@ class TextDataHate:
     def read_word2vec_from_pretrained(self, embfile, topk_word_num=-1):
         fopen = gzip.open if embfile.endswith(".gz") else open
         word2index = dict()
-        word2index['PAD'] = 0
-        word2index['START_TOKEN'] = 1
-        word2index['END_TOKEN'] = 2
-        word2index['UNK'] = 3
+        word2index['[PAD]'] = 0
+        word2index['[START_TOKEN]'] = 1
+        word2index['[END_TOKEN]'] = 2
+        word2index['[UNK]'] = 3
         # word2index['PAD'] = 1
         # word2index['UNK'] = 0
 
@@ -402,8 +419,13 @@ class TextDataHate:
             if topk_word_num > 0:
                 lines = lines[:topk_word_num]
             for line in tqdm(lines):
+
                 word_vec = line.strip().split()
-                word = bytes.decode(word_vec[0])
+                word = word_vec[0]
+                # if word=='Dodger':
+                #     print(cnt, len(word2index))
+                #     exit()
+
                 vector = np.asarray([float(value) for value in word_vec[1:]])
                 if vectordim == -1:
                     vectordim = len(vector)
@@ -430,7 +452,7 @@ class TextDataHate:
                     dfg=0
                 res.append(id)
             else:
-                res.append(self.word2index['UNK'])
+                res.append(self.word2index['[UNK]'])
         return res
 
 
@@ -464,9 +486,9 @@ class TextDataHate:
 
         sentence = []
         for wordId in sequence:
-            if wordId == self.word2index['END_TOKEN']:  # End of generated sentence
+            if wordId == self.word2index['[END_TOKEN]']:  # End of generated sentence
                 break
-            elif wordId != self.word2index['PAD'] and wordId != self.word2index['START_TOKEN']:
+            elif wordId != self.word2index['[PAD]'] and wordId != self.word2index['[START_TOKEN]']:
                 sentence.append(self.index2word[wordId])
 
         if reverse:  # Reverse means input so no <eos> (otherwise pb with previous early stop)
