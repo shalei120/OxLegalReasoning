@@ -31,6 +31,7 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), datetime.datetime.now())
 
+
 class LanguageModel(nn.Module):
     def __init__(self,w2i, i2w):
         """
@@ -114,10 +115,10 @@ class LanguageModel(nn.Module):
             negatives = self.get_negative_samples(self.decoderTargets)  # b s 10
             negativeEmbeddings = self.embedding(negatives)# b s 10 e
             fake_temp2 = torch.einsum('bse,bsne->bsn', temp1, negativeEmbeddings)
-            fake_probs = self.sigmoid(- fake_temp2)
+            fake_probs = self.sigmoid(fake_temp2)
             fake_recon_loss = - torch.log(fake_probs + eps)
             fake_recon_loss = torch.sum(fake_recon_loss, dim = 2) # b s
-            fake_recon_loss = torch.mean(fake_recon_loss, dim = 1)
+            fake_recon_loss = torch.sum(fake_recon_loss, dim = 1)
         return  recon_loss_mean, fake_recon_loss
 
     def get_negative_samples(self, indextensor, samplenum = 10):
@@ -188,7 +189,7 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
             x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
 
             loss , fake_loss = model(x)  # batch seq_len outsize
-            loss = torch.mean(loss + fake_loss)
+            loss = torch.mean(loss - fake_loss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args['clip'])
 
@@ -256,13 +257,28 @@ def parseargs():
     else:
         args['tasksize'] = cmdargs.size
 
+def kenlm_test(textData):
+    import kenlm
+    model = kenlm.Model('/Users/shalei/科研/2020/kenlm/law.lm')
+    ppls = []
+    for batch in textData.getBatches('test'):
+        sentences = [' '.join([textData.index2word[wid] for wid in r if wid >3]) for r in batch.decoderSeqs]
+        # print(sentences[0])
+        ppl = [np.log(model.perplexity(s)) for s in sentences]
+        # ppl = [-np.log(10**log_10_p) for log_10_p in ppl]
+        ppls.extend(ppl)
+
+    return sum(ppls)/len(ppls)
+
 if __name__ == '__main__':
     parseargs()
+    textData = TextData('cail')
+    nll = kenlm_test(textData)
+    print('LM=', nll, np.exp(nll))
     args['batchSize'] = 256
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
     # args['maxLengthDeco'] = args['maxLength'] + 1
-    textData = TextData('cail')
     args['vocabularySize'] = textData.getVocabularySize()
     args['chargenum'] = textData.getChargeNum()
     model = LanguageModel(textData.word2index, textData.index2word).to(args['device'])
