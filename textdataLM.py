@@ -20,6 +20,7 @@ class Batch:
         self.decoderSeqs = []
         self.targetSeqs = []
         self.decoder_lens = []
+        self.raw = []
 
 
 class TextData:
@@ -89,6 +90,7 @@ class TextData:
             batch.decoderSeqs.append([self.word2index['START_TOKEN']] + sen_ids)
             batch.decoder_lens.append(len(batch.decoderSeqs[i]))
             batch.targetSeqs.append(sen_ids + [self.word2index['END_TOKEN']])
+            batch.raw.append([self.index2word[wid] for wid in sen_ids])
 
         maxlen_dec = max(batch.decoder_lens)
         maxlen_dec = min(maxlen_dec, args['maxLengthEnco'])

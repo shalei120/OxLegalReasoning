@@ -15,7 +15,7 @@ from Hyperparameters import args
 from queue import PriorityQueue
 import copy,math
 from utils import *
-
+from tqdm import tqdm
 from textdataLM import TextData
 
 def asMinutes(s):
@@ -180,7 +180,7 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
     for epoch in range(args['numEpochs']):
         losses = []
 
-        for batch in batches:
+        for batch in tqdm(batches):
             optimizer.zero_grad()
             x = {}
             x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
