@@ -1,4 +1,5 @@
 import functools
+
 print = functools.partial(print, flush=True)
 import torch
 import torch.autograd as autograd
@@ -13,10 +14,11 @@ import numpy as np
 import datetime, time
 from Hyperparameters import args
 from queue import PriorityQueue
-import copy,math
+import copy, math
 from utils import *
 
 from textdataBeer import TextDataBeer
+
 
 def asMinutes(s):
     m = math.floor(s / 60)
@@ -31,8 +33,9 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), datetime.datetime.now())
 
+
 class LanguageModel(nn.Module):
-    def __init__(self,w2i, i2w, i2v):
+    def __init__(self, w2i, i2w, i2v):
         """
         Args:
             args: parameters of the model
@@ -61,12 +64,12 @@ class LanguageModel(nn.Module):
                                    num_layers=args['dec_numlayer'])
 
         self.out_unit = nn.Linear(args['hiddenSize'], args['vocabularySize'])
-        self.logsoftmax = nn.LogSoftmax(dim = -1)
+        self.logsoftmax = nn.LogSoftmax(dim=-1)
 
         self.element_len = args['hiddenSize']
 
         self.tanh = nn.Tanh()
-        self.softmax = nn.Softmax(dim = -1)
+        self.softmax = nn.Softmax(dim=-1)
         self.CEloss = torch.nn.CrossEntropyLoss(reduction='none')
         self.NLLloss = torch.nn.NLLLoss()
         self.sigmoid = torch.nn.Sigmoid()
@@ -75,7 +78,7 @@ class LanguageModel(nn.Module):
                            torch.rand(args['dec_numlayer'], 1, args['hiddenSize']).to(args['device']))
         self.M = Parameter(torch.rand(args['hiddenSize'], args['embeddingSize']))
 
-    def getloss(self, decoderInputs, decoderTargetsEmbedding, decoderTargets, inputmask = None, eps = 1e-20):
+    def getloss(self, decoderInputs, decoderTargetsEmbedding, decoderTargets, inputmask=None, eps=1e-20):
         '''
         :param decoderInputs:
         :param decoderTargetsEmbedding:  b s e
@@ -88,8 +91,8 @@ class LanguageModel(nn.Module):
         #     dec_input_embed = dec_input_embed * mask.unsqueeze(2)
 
         init_state = (self.init_state[0].repeat([1, batch_size, 1]), self.init_state[1].repeat([1, batch_size, 1]))
-        de_outputs, de_state = self.decoder_t(init_state, dec_input_embed, batch_size, dec_len) # b s h
-        temp1 = torch.einsum('bsh,he->bse', de_outputs, self.M )# b s e
+        de_outputs, de_state = self.decoder_t(init_state, dec_input_embed, batch_size, dec_len)  # b s h
+        temp1 = torch.einsum('bsh,he->bse', de_outputs, self.M)  # b s e
         temp2 = torch.einsum('bse,bse->bs', temp1, decoderTargetsEmbedding)
         probs = self.sigmoid(temp2)
 
@@ -100,10 +103,10 @@ class LanguageModel(nn.Module):
         else:
             recon_loss = recon_loss * inputmask
 
-        recon_loss_mean = torch.mean(recon_loss, dim = -1)
+        recon_loss_mean = torch.mean(recon_loss, dim=-1)
         return temp1, recon_loss_mean
 
-    def buildModel(self, x, test = False, eps = 1e-20):
+    def buildModel(self, x, test=False, eps=1e-20):
         self.decoderInputs = x['dec_input']
         self.decoder_lengths = x['dec_len']
         self.decoderTargets = x['dec_target']
@@ -113,15 +116,15 @@ class LanguageModel(nn.Module):
 
         if not test:
             negatives = self.get_negative_samples(self.decoderTargets)  # b s 10
-            negativeEmbeddings = self.embedding(negatives)# b s 10 e
+            negativeEmbeddings = self.embedding(negatives)  # b s 10 e
             fake_temp2 = torch.einsum('bse,bsne->bsn', temp1, negativeEmbeddings)
-            fake_probs = self.sigmoid(- fake_temp2)
+            fake_probs = self.sigmoid( fake_temp2)
             fake_recon_loss = - torch.log(fake_probs + eps)
             fake_recon_loss = torch.sum(fake_recon_loss, dim = 2) # b s
-            fake_recon_loss = torch.mean(fake_recon_loss, dim = 1)
+            fake_recon_loss = torch.sum(fake_recon_loss, dim = 1)
         return  recon_loss_mean, fake_recon_loss
 
-    def get_negative_samples(self, indextensor, samplenum = 10):
+    def get_negative_samples(self, indextensor, samplenum=10):
         '''
         :param indextensor:  b s
         :return: b s num
@@ -130,50 +133,50 @@ class LanguageModel(nn.Module):
         batch = indextensor.size()[0]
         seqlen = indextensor.size()[1]
         weights = torch.tensor([1 for _ in range(args['vocabularySize'])], dtype=torch.float)
-        samples = torch.multinomial(weights, batch * seqlen * samplenum, replacement=True) # bs * 10
-        res = samples.reshape((batch,seqlen, samplenum))
+        samples = torch.multinomial(weights, batch * seqlen * samplenum, replacement=True)  # bs * 10
+        res = samples.reshape((batch, seqlen, samplenum))
         # print(time.time() - t1)
         return res.to(args['device'])
 
     def decoder_t(self, initial_state, inputs, batch_size, dec_len):
-        inputs = torch.transpose(inputs, 0,1).contiguous()
+        inputs = torch.transpose(inputs, 0, 1).contiguous()
         state = initial_state
 
         output, out_state = self.dec_unit(inputs, state)
 
         # output = self.out_unit(output.view(batch_size * dec_len, args['hiddenSize']))
         # output = output.view(dec_len, batch_size, args['vocabularySize'])
-        output = torch.transpose(output, 0,1)
+        output = torch.transpose(output, 0, 1)
         return output, out_state
 
-    def forward(self, x, test = False):
+    def forward(self, x, test=False):
         recon_loss_mean, fake_loss = self.buildModel(x, test)
-        return  recon_loss_mean, fake_loss
+        return recon_loss_mean, fake_loss
 
-    def LMloss(self, sampled_hard, decoderInputs, eps = 1e-6):
+    def LMloss(self, sampled_hard, decoderInputs, eps=1e-6):
         batchsize = decoderInputs.size()[0]
-        seqlen =  decoderInputs.size()[1]
-        decoderTargets = decoderInputs[:,1:]
-        decoderInputs = decoderInputs[:,:-1]
+        seqlen = decoderInputs.size()[1]
+        decoderTargets = decoderInputs[:, 1:]
+        decoderInputs = decoderInputs[:, :-1]
         decoderTargetsEmbeddings = self.embedding(decoderTargets)
-        decoderTargetsEmbeddings = decoderTargetsEmbeddings * sampled_hard[:,1:].unsqueeze(2)
+        decoderTargetsEmbeddings = decoderTargetsEmbeddings * sampled_hard[:, 1:].unsqueeze(2)
         packed_input = torch.transpose(decoderInputs, 0, 1)
-        mask = torch.transpose(sampled_hard[:,:-1], 0, 1)
-        mask_out = torch.transpose(sampled_hard[:,1:], 0, 1)
-        target_embs = decoderTargetsEmbeddings.transpose(0,1)
+        mask = torch.transpose(sampled_hard[:, :-1], 0, 1)
+        mask_out = torch.transpose(sampled_hard[:, 1:], 0, 1)
+        target_embs = decoderTargetsEmbeddings.transpose(0, 1)
         packed_out = []
-        hidden =  (self.init_state[0].repeat([1, batchsize, 1]), self.init_state[1].repeat([1, batchsize, 1]))
+        hidden = (self.init_state[0].repeat([1, batchsize, 1]), self.init_state[1].repeat([1, batchsize, 1]))
         y_iter = torch.zeros(batchsize, args['embeddingSize']).to(args['device'])
         ys = []
-        for ind in range(seqlen-1)[::-1]:
-            m = mask_out[ind,:].unsqueeze(-1)
-            y = target_embs[ind,:,:]
+        for ind in range(seqlen - 1)[::-1]:
+            m = mask_out[ind, :].unsqueeze(-1)
+            y = target_embs[ind, :, :]
             # print(target_embs.size(),y.size(), y_iter.size(), m.size())
-            y_iter = m * y + (1-m) * y_iter
+            y_iter = m * y + (1 - m) * y_iter
             ys.append(y_iter)
-        ys = torch.stack(ys[::-1]) # s b h
+        ys = torch.stack(ys[::-1])  # s b h
 
-        packed_input_embs = self.embedding(packed_input) # s b e
+        packed_input_embs = self.embedding(packed_input)  # s b e
         for x, m in zip(packed_input_embs, mask):
             m = m.unsqueeze(-1)
             # print(x.size(), x.unsqueeze(0).size())
@@ -183,7 +186,7 @@ class LanguageModel(nn.Module):
             c1 = m * c1 + (1 - m) * hidden[1]
             hidden = (h1, c1)
             packed_out.append(x_post)
-        packed_out = torch.cat(packed_out, dim=0).transpose(0,1)
+        packed_out = torch.cat(packed_out, dim=0).transpose(0, 1)
         # print(packed_out.size(), self.M.size())
         temp1 = torch.einsum('bsh,he->bse', packed_out, self.M)  # b s e
         temp2 = torch.einsum('bse,sbe->bs', temp1, ys)
@@ -191,7 +194,7 @@ class LanguageModel(nn.Module):
 
         recon_loss = - torch.log(probs + eps)
         # print(recon_loss.size(), mask.size())
-        recon_loss = recon_loss * sampled_hard[:,:-1]
+        recon_loss = recon_loss * sampled_hard[:, :-1]
         # temp1, recon_loss_mean = self.getloss(decoderInputs, decoderTargetsEmbeddings, decoderTargets)
         recon_loss_mean = recon_loss.mean(1)
         return recon_loss_mean
@@ -226,7 +229,7 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
             x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
 
             loss , fake_loss = model(x)  # batch seq_len outsize
-            loss = torch.mean(loss + fake_loss)
+            loss = torch.mean(loss - fake_loss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args['clip'])
 
@@ -241,7 +244,7 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
                 print_loss_avg = print_loss_total / print_every
                 print_loss_total = 0
                 print('%s (%d %d%%) %.4f' % (timeSince(start, iter / (n_iters * args['numEpochs'])),
-                                                 iter, iter / n_iters * 100, print_loss_avg))
+                                             iter, iter / n_iters * 100, print_loss_avg))
 
             if iter % plot_every == 0:
                 plot_loss_avg = plot_loss_total / plot_every
@@ -262,6 +265,7 @@ def train(textData, model, model_path, print_every=10000, plot_every=10, learnin
     # self.test()
     # showPlot(plot_losses)
 
+
 def test(textData, model, datasetname, eps=1e-20):
     ave_loss = 0
     num = 0
@@ -271,11 +275,12 @@ def test(textData, model, datasetname, eps=1e-20):
             x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
             x['dec_len'] = batch.decoder_lens
             x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
-            recon_loss_mean , _= model(x, test = True)  # batch seq_len outsize
+            recon_loss_mean, _ = model(x, test=True)  # batch seq_len outsize
             ave_loss = (ave_loss * num + sum(recon_loss_mean)) / (num + len(recon_loss_mean))
             num += len(recon_loss_mean)
 
     return torch.exp(ave_loss)
+
 
 def parseargs():
     parser = argparse.ArgumentParser()
@@ -288,17 +293,33 @@ def parseargs():
     else:
         usegpu = True
         args['device'] = 'cuda:' + str(cmdargs.gpu)
+def kenlm_test(textData):
+    import kenlm
+    model = kenlm.Model('/Users/shalei/科研/2020/kenlm/beer.lm')
+    ppls = []
+    for batch in textData.getBatches_forLM('test'):
+        sentences = [' '.join([textData.index2word[wid] for wid in r if wid >3]) for r in batch.decoderSeqs]
+        # print(sentences[0])
+        ppl = [np.log(model.perplexity(s)) for s in sentences]
+        ppls.extend(ppl)
+
+    return sum(ppls)/len(ppls)
 
 if __name__ == '__main__':
+    textData = TextDataBeer('beer', trainLM = True)
+    nll = kenlm_test(textData)
+    print('LM=', nll, np.exp(nll))
+    
     parseargs()
     args['batchSize'] = 256
     # args['maxLength'] = 1000
     # args['maxLengthEnco'] = args['maxLength']
     # args['maxLengthDeco'] = args['maxLength'] + 1
-    textData = TextDataBeer('beer', trainLM = True)
     args['vocabularySize'] = textData.getVocabularySize()
     args['chargenum'] = 5
     args['embeddingSize'] = textData.index2vector.shape[1]
 
     model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
     train(textData, model, model_path = args['rootDir']+'/LMbeer.pkl')
+    # LM = torch.load(args['rootDir'] + '/LMbeer.pkl', map_location=args['device'])
+    print('LM=', test(textData, LM, 'test'))
