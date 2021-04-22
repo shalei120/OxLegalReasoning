@@ -301,4 +301,4 @@ if __name__ == '__main__':
     args['embeddingSize'] = textData.index2vector.shape[1]
 
     model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
-    train(textData, model, model_path = args['rootDir']+'/LMbeer3.pkl')
+    train(textData, model, model_path = args['rootDir']+'/LMbeer.pkl')
