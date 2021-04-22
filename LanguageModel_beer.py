@@ -319,7 +319,7 @@ if __name__ == '__main__':
     args['chargenum'] = 5
     args['embeddingSize'] = textData.index2vector.shape[1]
 
-    # model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
-    # train(textData, model, model_path = args['rootDir']+'/LMbeer3.pkl')
-    LM = torch.load(args['rootDir'] + '/LMbeer.pkl', map_location=args['device'])
+    model = LanguageModel(textData.word2index, textData.index2word, textData.index2vector).to(args['device'])
+    train(textData, model, model_path = args['rootDir']+'/LMbeer.pkl')
+    # LM = torch.load(args['rootDir'] + '/LMbeer.pkl', map_location=args['device'])
     print('LM=', test(textData, LM, 'test'))
