@@ -97,10 +97,10 @@ class Runner:
         print(args)
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
-            LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
-            for param in LM.parameters():
-                param.requires_grad = False
-            # LM=0
+            # LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
+            # for param in LM.parameters():
+            #     param.requires_grad = False
+            LM=0
             LSTM_IB_GAN_beer.train(self.textData, LM, self.textData.index2vector)
 
     def indexesFromSentence(self, sentence):
