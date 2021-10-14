@@ -443,8 +443,9 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             D_model.zero_grad()
 
             Gloss_pure, I, om, Gloss_best, z_nero_best, z_nero_sampled,logpz, optional = G_model(x)  # batch seq_len outsize
-            # Dloss = -torch.mean(torch.log(D_model(z_nero_best).clamp(eps,1))) + torch.mean(torch.log(D_model(z_nero_sampled.detach()).clamp(eps,1)))
-            Dloss = (-torch.mean(D_model(z_nero_best)) + torch.mean(D_model(z_nero_sampled.detach())))
+
+            Dloss = -torch.mean(torch.log(D_model(z_nero_best).clamp(eps,1))) + torch.mean(torch.log(D_model(z_nero_sampled.detach()).clamp(eps,1)))
+
             # Dloss = torch.Tensor([0])
             Dloss.backward(retain_graph=True)
             #
@@ -462,8 +463,9 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
             # print(Gloss_best.size(), Gloss_pure.size(), D_model(z_nero_sampled).size(), logpz.size(), regu.size())
             # print(torch.log(D_model(z_nero_sampled)+eps), logpz)
 
-            # G_ganloss = torch.log(D_model(z_nero_sampled).clamp(eps,1).squeeze())
-            G_ganloss = D_model(z_nero_sampled).squeeze()
+
+            G_ganloss = torch.log(D_model(z_nero_sampled).clamp(eps,1).squeeze())
+            # G_ganloss = D_model(z_nero_sampled).squeeze()
             if args['aspect'] == 0:
                 # Gloss = 10*Gloss_best.mean() + 10*Gloss_pure.mean() +5*I.mean()+om.mean()\
                 #     + ((Gloss_pure.detach() +I.detach()+om.detach()) * logpz.sum(1)).mean() - G_ganloss.mean()
@@ -485,6 +487,7 @@ def train(textData, LM, i2v=None, model_path=args['rootDir'] + '/chargemodel_LST
                             - G_ganloss.mean()
                 elif args['choose'] == 3:  # 2
                     Gloss = Gloss_best.mean() + Gloss_pure.mean() - G_ganloss.mean()+ 10*I.mean()+ 10*om.mean()
+
 
 
             # print(Gloss_best.mean() , Gloss_pure.mean(),((Gloss_pure.detach() +regu ) * logpz).mean())

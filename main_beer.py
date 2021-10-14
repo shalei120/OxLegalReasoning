@@ -97,10 +97,13 @@ class Runner:
         print(args)
         if args['model_arch'] == 'lstmibgan':
             print('Using LSTM information bottleneck GAN model for Beer.')
-            # LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
-            # for param in LM.parameters():
-            #     param.requires_grad = False
-            LM=0
+            LM = torch.load(args['rootDir']+'/LMbeer.pkl', map_location=args['device'])
+            for param in LM.parameters():
+                param.requires_grad = False
+
+            ppl = self.CalPPL(LM)
+            print('PPL=',ppl)
+            # LM=0
             LSTM_IB_GAN_beer.train(self.textData, LM, self.textData.index2vector)
 
     def indexesFromSentence(self, sentence):
@@ -139,6 +142,27 @@ class Runner:
             output_sentence = ' '.join(output_words[0])  # batch=1
             print('<', output_sentence, label)
             print('')
+
+    def CalPPL(self, LM):
+
+        batches = self.textData.getBatches('dev')
+        total = 0
+        loss_sum = 0
+        for index, batch in enumerate(batches):
+            x = {}
+            x['dec_input'] = autograd.Variable(torch.LongTensor(batch.decoderSeqs)).to(args['device'])
+            x['dec_len'] = batch.decoder_lens
+            x['dec_target'] = autograd.Variable(torch.LongTensor(batch.targetSeqs)).to(args['device'])
+            total += x['dec_input'].size()[0]
+            print(x['dec_input'].size())
+
+            embedding = nn.Embedding.from_pretrained(torch.FloatTensor(self.textData.index2vector))
+            decoderTargetsEmbeddings = embedding(x['dec_target'])
+            _, recon_loss = LM.getloss(x['dec_input'],decoderTargetsEmbeddings, x['dec_target']  )
+            loss_sum += recon_loss.sum()
+
+        loss_mean = loss_sum / total
+        return torch.exp(loss_mean)
 
 
 if __name__ == '__main__':
